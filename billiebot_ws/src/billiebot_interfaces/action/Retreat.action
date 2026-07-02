@@ -1,0 +1,11 @@
+# Retreat away from the dog
+# Goal
+float32 retreat_distance  # How far to back away (metres)
+---
+# Result
+bool success
+string message
+float32 distance_retreated
+---
+# Feedback
+float32 distance_so_far

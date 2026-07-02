@@ -1,0 +1,39 @@
+base_bridge:
+  ros__parameters:
+    mock: false
+    port: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
+    baudrate: 57600
+
+    wheel_radius: 0.034
+    wheel_separation: 0.298
+    encoder_ticks_per_rev: 2000.0
+    pid_rate_hz: 30.0
+
+    cmd_timeout_sec: 0.5
+    publish_rate_hz: 30.0
+
+    odom_frame: odom
+    base_frame: base_link
+    left_joint_name: left_wheel_joint
+    right_joint_name: right_wheel_joint
+
+    left_motor_sign: 1.0
+    right_motor_sign: 1.0
+    left_encoder_sign: 1.0
+    right_encoder_sign: 1.0
+
+    reset_encoders_on_start: true
+
+    # TF publishing — disable when EKF provides odom->base_link
+    publish_tf: true
+
+    # IMU — disabled until A4/A5 rewire (see docs/MEASURE_ME.md)
+    use_imu: false
+
+    # Battery monitoring via Arduino ADC
+    battery_pin: 0
+    battery_divider_ratio: 6.0
+    battery_cell_count: 3
+    battery_read_interval_sec: 1.0
+    battery_low_voltage: 10.5    # 3.5V/cell * 3 cells
+    battery_critical_voltage: 9.9  # 3.3V/cell * 3 cells

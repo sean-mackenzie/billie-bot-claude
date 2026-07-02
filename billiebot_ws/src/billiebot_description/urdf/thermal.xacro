@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- MLX90640 thermal camera (32x24 pixel, 110 deg FoV)
+         Breakout board ~24 x 16 x 6 mm, mass ~5g -->
+
+    <xacro:macro name="thermal_camera" params="parent *origin">
+
+        <xacro:property name="thermal_width"  value="0.024"/>
+        <xacro:property name="thermal_height" value="0.016"/>
+        <xacro:property name="thermal_depth"  value="0.006"/>
+        <xacro:property name="thermal_mass"   value="0.005"/>
+
+        <joint name="thermal_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="thermal_link"/>
+        </joint>
+
+        <link name="thermal_link">
+            <visual>
+                <origin xyz="${-thermal_depth/2} 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${thermal_depth} ${thermal_width} ${thermal_height}"/>
+                </geometry>
+                <material name="orange"/>
+            </visual>
+        </link>
+
+        <joint name="thermal_optical_joint" type="fixed">
+            <parent link="thermal_link"/>
+            <child link="thermal_link_optical"/>
+            <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+        </joint>
+
+        <link name="thermal_link_optical"/>
+
+    </xacro:macro>
+
+</robot>

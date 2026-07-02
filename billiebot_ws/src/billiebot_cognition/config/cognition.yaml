@@ -1,0 +1,28 @@
+# Cognition node configuration
+state_fusion:
+  ros__parameters:
+    publish_rate_hz: 2.0
+    window_sec: 10.0
+    hysteresis_sec: 3.0
+    bark_rate_stress_threshold: 0.3
+    thermal_only_timeout_sec: 30.0
+
+dog_logger:
+  ros__parameters:
+    db_path: /var/lib/billiebot/billie_events.db
+    snapshot_dir: /var/lib/billiebot/snapshots
+    rooms_config: ""
+    enable_snapshots: true
+
+daily_report:
+  ros__parameters:
+    db_path: /var/lib/billiebot/billie_events.db
+    output_dir: /var/lib/billiebot/reports
+    generate_hour: 23
+    generate_minute: 55
+
+report_server:
+  ros__parameters:
+    report_dir: /var/lib/billiebot/reports
+    host: "0.0.0.0"
+    port: 8080

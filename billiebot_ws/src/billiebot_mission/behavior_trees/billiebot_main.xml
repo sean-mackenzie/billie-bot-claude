@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BillieBot Main Behavior Tree
+
+  Structure: PATROL <-> INVESTIGATE(DoA) <-> TRACK_OBSERVE
+  Safety: battery guard -> SAFE, e-stop guard -> SAFE
+  Recovery: 3 Nav2 failures -> SAFE + alert (SYS-NAV-4)
+  Audio interrupt: AudioEvent re-sorts patrol queue toward DoA (SYS-FND-2)
+-->
+<root BTCPP_format="4" main_tree_to_execute="BillieBotMain">
+
+  <BehaviorTree ID="BillieBotMain">
+    <ReactiveSequence>
+      <!-- Safety guards — checked every tick -->
+      <BatteryGuard voltage="{battery_voltage}" threshold="10.5"/>
+      <EStopGuard estopped="{estopped}"/>
+
+      <Fallback>
+        <!-- Main mission state machine -->
+        <ReactiveSequence>
+          <!-- SAFE mode handler -->
+          <Condition ID="IsSafeMode" mode="{current_mode}" expected="SAFE"/>
+          <Action ID="StopMotors"/>
+          <Action ID="AlertOperator" message="SAFE mode activated"/>
+        </ReactiveSequence>
+
+        <Sequence>
+          <!-- PATROL state -->
+          <Fallback>
+            <!-- Check for audio interrupt (SYS-FND-2) -->
+            <Sequence>
+              <Condition ID="HasAudioEvent" event="{audio_event}"/>
+              <Action ID="ReorderPatrol" doa="{audio_doa}"/>
+            </Sequence>
+            <AlwaysSuccess/>
+          </Fallback>
+
+          <!-- Navigate to current waypoint -->
+          <RetryNode num_attempts="3">
+            <Action ID="NavigateToWaypoint"
+                    waypoint="{current_waypoint}"
+                    server_name="navigate_to_pose"/>
+          </RetryNode>
+
+          <!-- At waypoint: check for dog -->
+          <Fallback>
+            <Sequence>
+              <!-- Dog found — transition to TRACK_OBSERVE -->
+              <Condition ID="DogDetected" found="{dog_found}"/>
+
+              <!-- Get policy decision (MVP: always OBSERVE) -->
+              <PolicyDecision policy="ObserveOnlyPolicy"
+                             dog_state="{dog_state}"
+                             stress_proxy="{stress_proxy}"
+                             decision="{policy_decision}"/>
+
+              <!-- Execute decision -->
+              <Fallback>
+                <Sequence>
+                  <Condition ID="DecisionIs" decision="{policy_decision}" expected="APPROACH"/>
+                  <Action ID="ApproachDog" standoff="1.5" max_speed="0.15"/>
+                </Sequence>
+                <Sequence>
+                  <Condition ID="DecisionIs" decision="{policy_decision}" expected="RETREAT"/>
+                  <Action ID="Retreat" distance="1.0"/>
+                </Sequence>
+                <Sequence>
+                  <Condition ID="DecisionIs" decision="{policy_decision}" expected="SPEAK"/>
+                  <Action ID="Speak" sound_id="gentle_tone.wav" volume="0.3"/>
+                </Sequence>
+                <!-- Default: OBSERVE — just hold position -->
+                <Action ID="HoldPosition" duration="10.0"/>
+              </Fallback>
+            </Sequence>
+
+            <!-- No dog — advance to next waypoint -->
+            <Action ID="AdvanceWaypoint"/>
+          </Fallback>
+        </Sequence>
+      </Fallback>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+</root>

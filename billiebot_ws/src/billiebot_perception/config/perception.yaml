@@ -1,0 +1,32 @@
+# Perception node configuration
+oakd_dog_detector:
+  ros__parameters:
+    mock: false
+    confidence_threshold: 0.5
+    model_path: ""
+    camera_frame: oakd_link_optical
+    publish_rate_hz: 5.0
+
+dog_locator:
+  ros__parameters:
+    map_frame: map
+    min_confidence: 0.5
+
+thermal_node:
+  ros__parameters:
+    mock: false
+    publish_rate_hz: 4.0
+    thermal_frame: thermal_link_optical
+    dog_temp_min: 30.0
+    dog_temp_max: 40.0
+    min_blob_area: 8
+    i2c_bus: 1
+    i2c_address: 0x33
+
+noir_cam_node:
+  ros__parameters:
+    mock: false
+    publish_rate_hz: 5.0
+    camera_frame: noir_link_optical
+    width: 640
+    height: 480

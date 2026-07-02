@@ -1,0 +1,25 @@
+# Mission configuration
+mission_controller:
+  ros__parameters:
+    mock: false
+    patrol_waypoints:
+      - living_room
+      - kitchen
+      - bedroom
+      - hallway
+      - bathroom
+    battery_safe_voltage: 10.5
+    max_nav_failures: 3
+    tick_rate_hz: 2.0
+
+approach_dog_server:
+  ros__parameters:
+    min_standoff: 1.0
+    max_speed: 0.15
+
+retreat_server:
+  ros__parameters:
+    retreat_speed: 0.1
+
+dispense_treat_server:
+  ros__parameters: {}

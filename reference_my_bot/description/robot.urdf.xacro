@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro"  name="robot">
+
+    <xacro:arg name="use_sim" default="false" />
+    <xacro:arg name="use_lidar" default="false" />
+    <xacro:arg name="use_camera" default="false" />
+
+    <xacro:include filename="robot_core.xacro" />
+    <xacro:include filename="gazebo_control.xacro"/>
+    <xacro:include filename="lidar.xacro" />
+    <xacro:include filename="camera.xacro" />
+
+    <!-- Gazebo drive + joint-state plugins -->
+    <xacro:if value="$(arg use_sim)">
+        <xacro:gazebo_diff_drive/>
+    </xacro:if>
+
+    <!-- Optional lidar -->
+    <xacro:if value="$(arg use_lidar)">
+        <xacro:rplidar_a1 parent="chassis" use_sim="$(arg use_sim)">
+            <origin xyz="0.09 0.0 0.13575" rpy="0 0 0"/>
+        </xacro:rplidar_a1>
+    </xacro:if>
+
+    <!-- Optional camera -->
+    <xacro:if value="$(arg use_camera)">
+        <xacro:pi_camera_v2 parent="chassis" use_sim="$(arg use_sim)">
+            <origin xyz="0.10325 -0.115 0.1235" rpy="0 0 0"/>
+        </xacro:pi_camera_v2>
+    </xacro:if>
+
+    <!-- Commented out the below on 3/23/26 -->
+
+    <!-- Instantiate the RPLIDAR A1, attached to chassis link.
+         Origin is relative to the chassis link frame.
+         Chassis box spans x: 0→0.3, y: -0.15→0.15, z: 0→0.15
+         from chassis link origin (rear-bottom corner).
+         Placing lidar centered on top surface: x=0.15, y=0, z=0.18
+         (z = chassis top 0.15 + half lidar height 0.03) -->
+    <!-- 
+    <xacro:rplidar_a1 parent="chassis">
+        <origin xyz="0.15 0 0.18" rpy="0 0 0"/>
+    </xacro:rplidar_a1> 
+    -->
+
+    <!--
+        NOTE: The camera link/joint are defined entirely within camera.xacro
+        and require no macro instantiation — the file directly emits a fixed
+        joint from `chassis` to `camera_link` at xyz="0.300 0.0 0.075".
+        No additional block is needed here.
+    -->
+
+</robot>

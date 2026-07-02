@@ -1,0 +1,5 @@
+# Query current dog state
+# Empty request
+---
+billiebot_interfaces/DogState state
+bool dog_found

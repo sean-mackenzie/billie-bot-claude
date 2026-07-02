@@ -1,0 +1,15 @@
+# Execute patrol through a sequence of waypoints
+# Goal
+string[] waypoint_names  # Ordered list of waypoint names to visit
+bool loop               # If true, repeat indefinitely
+---
+# Result
+bool success
+string message
+uint32 waypoints_visited
+---
+# Feedback
+string current_waypoint
+uint32 waypoints_completed
+uint32 waypoints_remaining
+float32 distance_to_current

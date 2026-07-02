@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- OAK-D Lite stereo depth camera (replaces Pi Camera v2)
+         Dimensions: 91 x 28 x 17.5 mm, mass ~61g
+         H-FoV: 73 deg (RGB), 72 deg (stereo pair)
+         Stereo baseline: 75 mm -->
+
+    <xacro:macro name="oakd_lite" params="parent *origin">
+
+        <xacro:property name="oakd_width"  value="0.091"/>
+        <xacro:property name="oakd_height" value="0.028"/>
+        <xacro:property name="oakd_depth"  value="0.0175"/>
+        <xacro:property name="oakd_mass"   value="0.061"/>
+
+        <joint name="oakd_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="oakd_link"/>
+        </joint>
+
+        <link name="oakd_link">
+            <visual>
+                <origin xyz="${-oakd_depth/2} 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${oakd_depth} ${oakd_width} ${oakd_height}"/>
+                </geometry>
+                <material name="dark_grey"/>
+            </visual>
+            <collision>
+                <origin xyz="${-oakd_depth/2} 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${oakd_depth} ${oakd_width} ${oakd_height}"/>
+                </geometry>
+            </collision>
+            <xacro:inertial_box mass="${oakd_mass}" x="${oakd_depth}" y="${oakd_width}" z="${oakd_height}">
+                <origin xyz="${-oakd_depth/2} 0 0" rpy="0 0 0"/>
+            </xacro:inertial_box>
+        </link>
+
+        <!-- Optical frame (REP-0103) -->
+        <joint name="oakd_optical_joint" type="fixed">
+            <parent link="oakd_link"/>
+            <child link="oakd_link_optical"/>
+            <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+        </joint>
+
+        <link name="oakd_link_optical"/>
+
+    </xacro:macro>
+
+</robot>

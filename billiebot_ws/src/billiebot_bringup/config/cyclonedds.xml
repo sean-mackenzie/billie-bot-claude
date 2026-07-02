@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CycloneDDS configuration for BillieBot multi-machine setup.
+  Static unicast peers between Jetson Orin Nano and Raspberry Pi 4.
+  Update IP addresses to match your network.
+-->
+<CycloneDDS>
+  <Domain>
+    <General>
+      <Interfaces>
+        <NetworkInterface autodetermine="true"/>
+      </Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+    </General>
+    <Discovery>
+      <Peers>
+        <!-- Jetson Orin Nano IP -->
+        <Peer address="192.168.1.100"/>
+        <!-- Raspberry Pi 4 IP -->
+        <Peer address="192.168.1.101"/>
+      </Peers>
+      <ParticipantIndex>auto</ParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

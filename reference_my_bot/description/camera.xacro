@@ -1,0 +1,221 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!--<xacro:property name="pi" value="3.141592653589793"/> -->
+
+    <xacro:macro name="pi_camera_v2" params="parent use_sim:=false *origin">
+        <!-- 
+        ============================================================================
+        Raspberry Pi Camera Module v2 (Sony IMX219) — Gazebo/RViz Simulation Xacro
+        ============================================================================
+
+        Hardware Reference
+        - - - - - - - 
+        Sensor       : Sony IMX219
+        Resolution   : 3280 × 2464 px (still) | 1640 × 1232 @ 41 fps (video mode)
+        Pixel Pitch  : 1.12 µm × 1.12 µm
+        Sensor Area  : 3.68 × 2.76 mm  (1/4" optical format)
+        Focal Length : f = 3.04 mm
+        Aperture     : F/2.0
+        H-FoV        : 62.2°  →  2·atan(3.68 / (2·3.04))  = 1.0857 rad  ← parameterised below
+        V-FoV        : 48.8°  →  2·atan(2.76 / (2·3.04))  = 0.8520 rad  (derived, not used directly)
+        PCB Dims     : 25 mm × 24 mm × 9 mm  (W × H × D including lens module)
+        Mass (approx): 3 g
+
+        Coordinate Frame Convention
+        - - - - - - - 
+        Two overlapping fixed frames are required to satisfy REP-0103
+        (https://www.ros.org/reps/rep-0103.html):
+
+        camera_link         — ROS body convention  : X-forward, Y-left,  Z-up
+        camera_link_optical — Camera/OpenCV conv.  : X-right,  Y-down,  Z-forward
+
+        The transform from camera_link → camera_link_optical is a compound rotation:
+            R = Rz(-π/2) · Rx(-π/2)
+        expressed in URDF roll-pitch-yaw (applied as Rx·Ry·Rz) as rpy="-π/2  0  -π/2".
+
+        The Gazebo <sensor> block is attached to camera_link (NOT the optical link).
+        Image and CameraInfo message headers must reference camera_link_optical.
+
+        Mount Point
+        - - - - - - - 
+        The camera is placed at the geometric front-centre of the chassis front face.
+        Chassis box (in chassis frame):  x ∈ [0, 0.3],  y ∈ [-0.15, 0.15],  z ∈ [0, 0.15]
+        Chosen mount:  x = 0.300 m  (flush with front face)
+                    y = 0.000 m  (centred laterally)
+                    z = 0.075 m  (centred vertically on front face)
+        No pitch/roll/yaw offset — camera is level and forward-facing.
+        ============================================================================
+        -->
+
+        <!-- ======================================================================
+            PHYSICAL PARAMETERS (all SI: metres, kg)
+            ====================================================================== -->
+
+        <!-- PCB / module footprint -->
+        <xacro:property name="cam_width"  value="0.025"/>   <!-- 25 mm (Y-axis in link frame) -->
+        <xacro:property name="cam_height" value="0.024"/>   <!-- 24 mm (Z-axis in link frame) -->
+        <xacro:property name="cam_depth"  value="0.009"/>   <!-- 9  mm (X-axis in link frame, i.e. into scene) -->
+        <xacro:property name="cam_mass"   value="0.003"/>   <!-- 3 g -->
+
+        <!-- ======================================================================
+            CAMERA JOINT — fixed to the chassis link
+            Origin is placed at the front-centre of the chassis face:
+            x = 0.300 m (front face of 0.3 m chassis box)
+            y = 0.000 m (lateral centre)
+            z = 0.075 m (vertical centre of 0.15 m chassis face)
+            ====================================================================== -->
+        <joint name="camera_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="camera_link"/>
+        </joint>
+        <!-- Commented out the below on 3/23/2026
+        <joint name="camera_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="chassis"/>
+            <child  link="camera_link"/>
+            <origin xyz="0.300 0.0 0.075" rpy="0 0 0"/>
+        </joint> -->
+
+        <!-- ======================================================================
+            CAMERA LINK — body/ROS convention frame (X-forward, Y-left, Z-up)
+            This is where the Gazebo sensor plugin is anchored.
+
+            Visual: a small rectangular prism representing the camera PCB.
+            The visual is centred one half-depth behind the link origin so that
+            the link origin (= optical centre) sits flush with the front face.
+
+            Collision + Inertial are intentionally omitted:
+            • The camera is on a fixed joint — inertia contributes nothing to
+                the dynamics (it would be folded into the chassis inertia).
+            • The chassis collision geometry fully encloses the camera.
+            ====================================================================== -->
+        <link name="camera_link">
+            <visual>
+                <!-- Shift the visual box so its front face aligns with the link origin -->
+                <origin xyz="${-cam_depth/2} 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${cam_depth} ${cam_width} ${cam_height}"/>
+                </geometry>
+                <material name="red"/>
+            </visual>
+        </link>
+
+        <!-- ======================================================================
+            CAMERA OPTICAL JOINT & LINK
+            ======================================================================
+            REP-0103 mandates a separate "optical" frame co-located with the
+            camera body frame but with axes matching the image/OpenCV convention:
+                optical X = rightward   (+Y in ROS body)
+                optical Y = downward    (-Z in ROS body)
+                optical Z = forward     (+X in ROS body)
+
+            The URDF rotation rpy="-π/2  0  -π/2" achieves this transform via the
+            sequence  R = Rx(-π/2) · Ry(0) · Rz(-π/2):
+                1. Rz(-π/2):  rotates +X(fwd)→+Y(left),  +Y(left)→-X(back)
+                2. Rx(-π/2):  rotates +Y(fwd) → +Z(up) direction ... resulting in
+                            the correct orientation after the combined application.
+
+            The child frame camera_link_optical is a "dummy" link — no geometry,
+            no inertia — purely a named TF frame used in message headers.
+            ====================================================================== -->
+        <joint name="camera_optical_joint" type="fixed">
+            <parent link="camera_link"/>
+            <child  link="camera_link_optical"/>
+            <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+        </joint>
+
+        <link name="camera_link_optical"/>
+
+        <xacro:if value="${use_sim}">
+            <!-- ======================================================================
+                GAZEBO SENSOR BLOCK
+                ======================================================================
+                Parameters derived from the Pi Camera v2 / IMX219 datasheet:
+
+                horizontal_fov  : 1.0857 rad  = 2·atan(3.68 mm / (2·3.04 mm))  = 62.2°
+                Image format    : R8G8B8  (8-bit per channel, matching sensor encoding)
+                Resolution      : 1640 × 1232 (half-resolution video mode, good balance
+                                between fidelity and simulation performance; reduce to
+                                640 × 480 for low-overhead testing)
+                Clip near/far   : 0.05 m / 8.0 m  (IMX219 minimum focus ~10 cm;
+                                far plane is practical Gazebo scene range)
+                update_rate     : 30.0 Hz  (max frame rate at this resolution on HW)
+                noise           : Gaussian, mean=0, stddev=0.007 — representative of
+                                CMOS read noise at typical gain settings
+
+                Topic mapping (ros_gz_bridge / ros_gz_image):
+                Gazebo publishes:          /camera/image_raw   (sensor_msgs/Image)
+                                            /camera/camera_info (sensor_msgs/CameraInfo)
+                Bridge config (see gz_bridge.yaml) must include the camera_info topic.
+                The image topic must use the image_bridge node, NOT parameter_bridge.
+
+                NOTE: The <sensor> tag is placed on camera_link (the body frame).
+                    Gazebo internally resolves the image to the optical frame via
+                    the plugin — do NOT reference camera_link_optical here.
+                ====================================================================== -->
+            <gazebo reference="camera_link">
+                <sensor name="camera" type="camera">
+
+                    <!-- Pose of the sensor within the link frame — identity (already
+                        positioned by the joint above). -->
+                    <pose>0 0 0 0 0 0</pose>
+
+                    <camera>
+                        <!--
+                            H-FoV derived from IMX219 datasheet:
+                            h_fov = 2·atan(sensor_width / (2·focal_length))
+                                = 2·atan(3.68 / (2·3.04))
+                                = 2·atan(0.60526)
+                                ≈ 1.0857 rad  (62.2°)
+                        -->
+                        <horizontal_fov>1.0857</horizontal_fov>
+
+                        <image>
+                            <!-- R8G8B8: 8-bit unsigned, 3 channels — matches IMX219 RAW→RGB
+                                output pipeline. 
+                                    Use 640x480 for lightweight testing.
+                                    Reduced to 320x240 on 3/23/2026 for even lower overhead;
+                                    Use 1640x1232 for full resolution. -->
+                            <format>R8G8B8</format>
+                            <width>320</width>
+                            <height>240</height>
+                        </image>
+
+                        <clip>
+                            <!-- near: 0.05 m — below IMX219's ~0.10 m minimum focus but
+                                set conservatively to avoid near-clip artefacts in Gazebo.
+                                far : 8.0 m — practical indoor environment ceiling. -->
+                            <near>0.05</near>
+                            <far>8.0</far>
+                        </clip>
+
+                        <noise>
+                            <!-- Gaussian noise to emulate CMOS read noise & quantisation.
+                                stddev = 0.007 (~1.8 DN @ 8-bit depth) is a conservative
+                                but physically plausible estimate for the IMX219 at ISO 100. -->
+                            <type>gaussian</type>
+                            <mean>0.0</mean>
+                            <stddev>0.007</stddev>
+                        </noise>
+
+                    </camera>
+
+                    <!-- Publish at 30 Hz — matches IMX219 1640×1232 @ 41 fps (capped at
+                        30 Hz for ROS bandwidth management) -->
+                    <update_rate>15.0</update_rate>
+                    <always_on>1</always_on>
+                    <visualize>true</visualize>
+
+                    <!-- Gazebo Harmonic / ROS 2 Jazzy: topic names for ros_gz_image bridge.
+                        The image_bridge node must bridge: /camera/image_raw
+                        The parameter_bridge must bridge:  /camera/camera_info  -->
+                    <topic>/camera/image_raw</topic>
+                    <gz_frame_id>camera_link_optical</gz_frame_id>
+                </sensor>
+            </gazebo>
+        </xacro:if>
+    </xacro:macro>
+
+</robot>

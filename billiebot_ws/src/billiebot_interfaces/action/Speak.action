@@ -1,0 +1,11 @@
+# Play a sound or spoken phrase
+# Goal
+string sound_id    # Identifier for sound file or TTS text
+float32 volume     # 0.0 to 1.0
+---
+# Result
+bool success
+string message
+---
+# Feedback
+float32 progress   # 0.0 to 1.0

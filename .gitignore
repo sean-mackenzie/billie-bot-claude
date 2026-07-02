@@ -1,3 +1,11 @@
+# macOS
+.DS_Store
+
+# ROS 2 build artifacts
+billiebot_ws/build/
+billiebot_ws/install/
+billiebot_ws/log/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

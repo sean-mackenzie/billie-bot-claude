@@ -1,0 +1,15 @@
+# Approach detected dog to standoff distance
+# Goal
+float32 standoff_distance  # Minimum 1.0m per SYS-FND-3
+float32 max_speed           # Capped at 0.15 m/s near dog
+---
+# Result
+bool success
+string message
+float32 final_distance
+geometry_msgs/Point final_position
+---
+# Feedback
+float32 current_distance
+float32 current_speed
+geometry_msgs/Point robot_position

@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- Raspberry Pi Camera 3 NoIR (no IR filter, for low-light detection)
+         Dimensions: 25 x 24 x 11.5 mm, mass ~3g
+         Sensor: Sony IMX708, 12MP, H-FoV 66 deg -->
+
+    <xacro:macro name="noir_camera" params="parent *origin">
+
+        <xacro:property name="noir_width"  value="0.025"/>
+        <xacro:property name="noir_height" value="0.024"/>
+        <xacro:property name="noir_depth"  value="0.0115"/>
+        <xacro:property name="noir_mass"   value="0.003"/>
+
+        <joint name="noir_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="noir_link"/>
+        </joint>
+
+        <link name="noir_link">
+            <visual>
+                <origin xyz="${-noir_depth/2} 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${noir_depth} ${noir_width} ${noir_height}"/>
+                </geometry>
+                <material name="dark_grey"/>
+            </visual>
+        </link>
+
+        <joint name="noir_optical_joint" type="fixed">
+            <parent link="noir_link"/>
+            <child link="noir_link_optical"/>
+            <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+        </joint>
+
+        <link name="noir_link_optical"/>
+
+    </xacro:macro>
+
+</robot>

@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="billiebot">
+
+    <!-- Arguments -->
+    <xacro:arg name="use_sim"    default="false"/>
+    <xacro:arg name="use_lidar"  default="true"/>
+    <xacro:arg name="use_oakd"   default="true"/>
+    <xacro:arg name="use_noir"   default="true"/>
+    <xacro:arg name="use_thermal" default="true"/>
+    <xacro:arg name="use_mic"    default="true"/>
+    <xacro:arg name="use_imu"    default="false"/>
+
+    <!-- Core robot structure -->
+    <xacro:include filename="robot_core.xacro"/>
+
+    <!-- Sensor macros -->
+    <xacro:include filename="lidar.xacro"/>
+    <xacro:include filename="oakd_lite.xacro"/>
+    <xacro:include filename="noir_camera.xacro"/>
+    <xacro:include filename="thermal.xacro"/>
+    <xacro:include filename="mic_array.xacro"/>
+    <xacro:include filename="imu.xacro"/>
+
+    <!-- RPLidar A1 — mounted on top of chassis -->
+    <xacro:if value="$(arg use_lidar)">
+        <xacro:rplidar_a1 parent="chassis" use_sim="$(arg use_sim)">
+            <origin xyz="0.09 0.0 0.13575" rpy="0 0 0"/>
+        </xacro:rplidar_a1>
+    </xacro:if>
+
+    <!-- OAK-D Lite — front of chassis, replaces Pi Camera v2 position -->
+    <!-- TODO(measure): Verify exact mount position on chassis -->
+    <xacro:if value="$(arg use_oakd)">
+        <xacro:oakd_lite parent="chassis">
+            <origin xyz="0.10325 -0.115 0.1235" rpy="0 0 0"/>
+        </xacro:oakd_lite>
+    </xacro:if>
+
+    <!-- Pi Camera 3 NoIR — secondary camera for low-light -->
+    <!-- TODO(measure): Verify exact mount position -->
+    <xacro:if value="$(arg use_noir)">
+        <xacro:noir_camera parent="chassis">
+            <origin xyz="0.10325 0.115 0.1235" rpy="0 0 0"/>
+        </xacro:noir_camera>
+    </xacro:if>
+
+    <!-- MLX90640 thermal camera — near front, angled slightly down -->
+    <!-- TODO(measure): Verify exact mount position -->
+    <xacro:if value="$(arg use_thermal)">
+        <xacro:thermal_camera parent="chassis">
+            <origin xyz="0.22 0.0 0.11" rpy="0 0.2 0"/>
+        </xacro:thermal_camera>
+    </xacro:if>
+
+    <!-- ReSpeaker mic array — top of chassis, centered -->
+    <!-- TODO(measure): Verify exact mount position -->
+    <xacro:if value="$(arg use_mic)">
+        <xacro:mic_array parent="chassis">
+            <origin xyz="0.09 0.0 0.18" rpy="0 0 0"/>
+        </xacro:mic_array>
+    </xacro:if>
+
+    <!-- BNO055 IMU — on chassis, near center of rotation -->
+    <!-- NOTE: Requires encoder rewire (A4/A5 → D4/D7) before enabling -->
+    <xacro:if value="$(arg use_imu)">
+        <xacro:bno055_imu parent="chassis">
+            <origin xyz="0.0 0.0 0.05" rpy="0 0 0"/>
+        </xacro:bno055_imu>
+    </xacro:if>
+
+</robot>

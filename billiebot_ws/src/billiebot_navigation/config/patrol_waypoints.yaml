@@ -1,0 +1,37 @@
+# Named patrol waypoints for BillieBot
+# Poses are in map frame: [x, y, yaw]
+# Update these after mapping the apartment
+
+patrol:
+  ros__parameters:
+    waypoint_names:
+      - living_room
+      - kitchen
+      - bedroom
+      - hallway
+      - bathroom
+
+    living_room:
+      x: 1.0
+      y: 0.0
+      yaw: 0.0
+
+    kitchen:
+      x: 3.0
+      y: 1.0
+      yaw: 1.57
+
+    bedroom:
+      x: -1.0
+      y: 2.0
+      yaw: 3.14
+
+    hallway:
+      x: 0.0
+      y: 1.0
+      yaw: -1.57
+
+    bathroom:
+      x: 2.0
+      y: 3.0
+      yaw: 0.0

@@ -1,0 +1,11 @@
+# Dispense a treat (stub for future hardware)
+# Goal
+uint8 quantity  # Number of treats to dispense
+---
+# Result
+bool success
+string message
+uint8 dispensed
+---
+# Feedback
+uint8 dispensed_so_far

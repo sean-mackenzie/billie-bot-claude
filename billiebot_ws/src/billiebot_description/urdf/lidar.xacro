@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:macro name="rplidar_a1" params="parent use_sim:=false *origin">
+
+        <joint name="laser_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="laser_frame"/>
+        </joint>
+
+        <link name="laser_frame">
+            <visual>
+                <geometry>
+                    <cylinder radius="0.035" length="0.0545"/>
+                </geometry>
+                <material name="red"/>
+            </visual>
+            <collision>
+                <geometry>
+                    <cylinder radius="0.035" length="0.0545"/>
+                </geometry>
+            </collision>
+            <xacro:inertial_cylinder mass="0.170" length="0.0545" radius="0.035">
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+            </xacro:inertial_cylinder>
+        </link>
+
+        <xacro:if value="${use_sim}">
+            <gazebo reference="laser_frame">
+                <sensor name="laser" type="gpu_lidar">
+                    <pose>0 0 0 0 0 0</pose>
+                    <topic>/scan</topic>
+                    <gz_frame_id>laser_frame</gz_frame_id>
+                    <update_rate>5</update_rate>
+                    <ray>
+                        <scan>
+                            <horizontal>
+                                <samples>360</samples>
+                                <resolution>1</resolution>
+                                <min_angle>-3.14159</min_angle>
+                                <max_angle>3.14159</max_angle>
+                            </horizontal>
+                            <vertical>
+                                <samples>1</samples>
+                                <resolution>0.1</resolution>
+                                <min_angle>0</min_angle>
+                                <max_angle>0</max_angle>
+                            </vertical>
+                        </scan>
+                        <range>
+                            <min>0.15</min>
+                            <max>12.0</max>
+                            <resolution>0.01</resolution>
+                        </range>
+                        <noise>
+                            <type>gaussian</type>
+                            <mean>0.0</mean>
+                            <stddev>0.01</stddev>
+                        </noise>
+                    </ray>
+                    <always_on>1</always_on>
+                    <visualize>true</visualize>
+                </sensor>
+            </gazebo>
+        </xacro:if>
+
+    </xacro:macro>
+
+</robot>

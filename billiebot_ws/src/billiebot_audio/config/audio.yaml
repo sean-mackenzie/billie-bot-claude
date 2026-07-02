@@ -1,0 +1,19 @@
+# Audio node configuration
+audio_classifier:
+  ros__parameters:
+    mock: false
+    publish_rate_hz: 2.0
+    confidence_threshold: 0.3
+    model_path: ""
+    sample_rate: 16000
+    chunk_duration_sec: 0.975
+    device_index: -1
+    energy_threshold_db: -30.0
+
+speaker_node:
+  ros__parameters:
+    mock: false
+    sounds_dir: ""
+    max_volume: 0.5
+    min_interval_sec: 10.0
+    fade_in_sec: 0.5

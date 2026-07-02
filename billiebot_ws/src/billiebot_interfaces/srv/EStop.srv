@@ -1,0 +1,7 @@
+# Emergency stop service
+# Request: engage or release e-stop
+bool engage  # true = stop, false = release
+---
+# Response
+bool success
+string message

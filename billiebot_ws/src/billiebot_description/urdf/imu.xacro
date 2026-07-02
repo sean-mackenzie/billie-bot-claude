@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- BNO055 IMU (guarded by use_imu arg)
+         Breakout board ~27 x 20 x 4 mm, mass ~3g
+         NOTE: Requires right encoder rewire from A4/A5 to free I2C pins.
+         See docs/MEASURE_ME.md for details. -->
+
+    <xacro:macro name="bno055_imu" params="parent *origin">
+
+        <xacro:property name="imu_width"  value="0.027"/>
+        <xacro:property name="imu_height" value="0.020"/>
+        <xacro:property name="imu_depth"  value="0.004"/>
+        <xacro:property name="imu_mass"   value="0.003"/>
+
+        <joint name="imu_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="imu_link"/>
+        </joint>
+
+        <link name="imu_link">
+            <visual>
+                <geometry>
+                    <box size="${imu_depth} ${imu_width} ${imu_height}"/>
+                </geometry>
+                <material name="blue"/>
+            </visual>
+        </link>
+
+    </xacro:macro>
+
+</robot>

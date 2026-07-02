@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- ReSpeaker USB Mic Array v2.0 (circular, 4-mic)
+         Diameter: 70mm, height: ~15mm, mass ~50g -->
+
+    <xacro:macro name="mic_array" params="parent *origin">
+
+        <xacro:property name="mic_radius" value="0.035"/>
+        <xacro:property name="mic_height" value="0.015"/>
+        <xacro:property name="mic_mass"   value="0.050"/>
+
+        <joint name="mic_joint" type="fixed">
+            <xacro:insert_block name="origin"/>
+            <parent link="${parent}"/>
+            <child link="mic_link"/>
+        </joint>
+
+        <link name="mic_link">
+            <visual>
+                <geometry>
+                    <cylinder radius="${mic_radius}" length="${mic_height}"/>
+                </geometry>
+                <material name="dark_grey"/>
+            </visual>
+            <xacro:inertial_cylinder mass="${mic_mass}" length="${mic_height}" radius="${mic_radius}">
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+            </xacro:inertial_cylinder>
+        </link>
+
+    </xacro:macro>
+
+</robot>
