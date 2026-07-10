@@ -30,15 +30,13 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Mock: publish fake /scan at 5Hz
+        # Mock: publish fake /scan at 10Hz
         Node(
             condition=IfCondition(mock),
             package='billiebot_base',
-            executable='base_bridge',
-            name='mock_lidar_stub',
-            parameters=[{'mock': True}],
+            executable='mock_scan',
+            name='mock_scan',
+            parameters=[{'frame_id': 'laser_frame'}],
             output='screen',
-            # In practice, a dedicated mock scan publisher would be better.
-            # For now, this is a placeholder.
         ),
     ])

@@ -10,6 +10,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, PointStamped
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformListener, TransformException
+import tf2_geometry_msgs  # noqa: F401 — registers geometry_msgs types with tf2
 from billiebot_interfaces.msg import DogDetection3D
 
 

@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'base_bridge = billiebot_base.base_bridge:main',
+            'mock_scan = billiebot_base.mock_scan:main',
         ],
     },
 )

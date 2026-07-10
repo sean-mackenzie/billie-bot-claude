@@ -7,7 +7,7 @@
 This guide takes you from zero installed software to (1) building and running the **entire BillieBot stack in mock mode on your Mac**, and (2) provisioning the **robot's onboard computers** for real-hardware deployment. Every fork in the road is labeled **Recommended** or **Quickest**; each major step ends with a **Verify** check.
 
 > **Conventions used throughout**
-> - The repository is assumed to be cloned at `~/billiebot` on every machine. Adjust paths if yours differs.
+> - The repository (`github.com/sean-mackenzie/billie-bot-claude`) is assumed to be cloned at `~/billie-bot-claude` on every machine. Adjust paths if yours differs.
 > - Commands prefixed `host$` run on your Mac's terminal; `container$` inside a Docker container; `jetson$` / `pi$` on the robot computers over SSH.
 > - The ROS 2 workspace inside the repo is `billiebot_ws/` and is always mounted/opened at `/ws` inside containers.
 
@@ -126,8 +126,8 @@ prints "Hello from Docker!".
 ## 1.2 Get the code
 
 ```bash
-host$ git clone <your-repo-url> ~/billiebot   # skip if you already have it
-host$ cd ~/billiebot
+host$ git clone https://github.com/sean-mackenzie/billie-bot-claude.git ~/billie-bot-claude   # skip if you already have it
+host$ cd ~/billie-bot-claude
 host$ ls billiebot_ws/src
 ```
 
@@ -139,7 +139,7 @@ host$ ls billiebot_ws/src
 
 > ⚠️ **Do not use `osrf/ros:humble-desktop`** as the base image. As of July 2026 it is published **amd64-only**, so on Apple Silicon it would run under slow QEMU emulation. The official `ros:humble` library image is multi-arch (amd64 + arm64); this guide installs the desktop tools on top of it.
 
-**Step 1 — Create the Dockerfile.** Save the following as `~/billiebot/docker/Dockerfile` (create the `docker/` directory; committing it to the repo is up to you):
+**Step 1 — Create the Dockerfile.** Save the following as `~/billie-bot-claude/docker/Dockerfile` (create the `docker/` directory; committing it to the repo is up to you):
 
 ```dockerfile
 # BillieBot dev container — ROS 2 Humble on Ubuntu 22.04 (multi-arch; arm64-native on Apple Silicon)
@@ -198,7 +198,7 @@ Notes:
 **Step 2 — Build the image** (~5–10 min, ~6 GB):
 
 ```bash
-host$ cd ~/billiebot
+host$ cd ~/billie-bot-claude
 host$ docker build -t billiebot-dev docker/
 ```
 
@@ -208,7 +208,7 @@ host$ docker build -t billiebot-dev docker/
 
 ```bash
 host$ docker run -it --name billiebot-dev \
-    -v "$HOME/billiebot/billiebot_ws:/ws" \
+    -v "$HOME/billie-bot-claude/billiebot_ws:/ws" \
     -p 8765:8765 \
     -p 8080:8080 \
     billiebot-dev
@@ -224,10 +224,15 @@ host$ docker exec -it billiebot-dev bash # open a SECOND shell (needed for tests
 **Verify (inside the container):**
 
 ```bash
-container$ ros2 doctor --report | head -20
+container$ ros2 doctor --report > /tmp/doctor_report.txt
+container$ grep -i "distribution name" /tmp/doctor_report.txt
 ```
 
-shows `distribution name : humble` with no fatal errors.
+shows `distribution name : humble` with no fatal errors. (Don't pipe `ros2 doctor --report`
+directly into `head` — the report is longer than a few lines, and `head` closing the pipe
+early causes a harmless but alarming-looking `BrokenPipeError` traceback. Redirecting to a
+file first avoids it; check the rest of the report with `head -30 /tmp/doctor_report.txt`
+if you want to skim more.)
 
 Continue to [§1.5 Build the workspace](#15-build-the-workspace).
 
@@ -236,9 +241,9 @@ Continue to [§1.5 Build the workspace](#15-build-the-workspace).
 **Why this path:** zero files to create — one `docker run` plus one paste-block gets you to a running mock stack in ~15 minutes. The trade-off: dependencies live only inside the container instance, so if you delete it you re-install them (use `docker start`, not `docker run`, to come back to it).
 
 ```bash
-host$ cd ~/billiebot
+host$ cd ~/billie-bot-claude
 host$ docker run -it --name billiebot-quick \
-    -v "$HOME/billiebot/billiebot_ws:/ws" \
+    -v "$HOME/billie-bot-claude/billiebot_ws:/ws" \
     -p 8765:8765 -p 8080:8080 \
     ros:humble bash
 ```
@@ -292,6 +297,29 @@ container$ ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
 
 This is rung 14 of the bringup ladder — it chain-includes every subsystem (nav, perception, audio, cognition, mission) with all hardware mocked.
 
+**Optional — supply a map so Nav2 fully activates.** Without a map, `map_server` logs
+`yaml-filename parameter is empty` and Nav2's lifecycle bringup stalls at
+`Activating planner_server` (the global costmap's static layer waits forever for `/map`).
+The Verify topics/services below still appear, so this doesn't block the rest of Part 1 —
+but navigation itself stays inactive. To run with a map:
+
+1. Place `<name>.yaml` + `<name>.pgm` in `billiebot_ws/src/billiebot_navigation/maps/`.
+   The yaml's `image:` field must exactly match the `.pgm` filename (it is resolved
+   relative to the yaml's own directory).
+2. Rebuild so the map is installed:
+   `colcon build --symlink-install --packages-select billiebot_navigation`.
+3. Launch with the `map` argument — use an **absolute path** (relative paths resolve
+   against the launch process's working directory and only work by accident):
+
+```bash
+container$ ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true \
+    map:=/ws/src/billiebot_navigation/maps/my_apartment_v1.yaml
+```
+
+With a map loaded, the launch log shows
+`lifecycle_manager_navigation: Managed nodes are active`, and
+`ros2 topic echo /map --once --field info` (second shell) returns the map metadata.
+
 **Verify** (in a second shell — `docker exec -it billiebot-dev bash`, then `cd /ws && source install/setup.bash`):
 
 ```bash
@@ -334,7 +362,7 @@ Expect software-rendered (slower) graphics; Foxglove is the better daily driver 
 
 ## 1.8 Optional: VS Code Dev Containers
 
-If you use VS Code: install it (`brew install --cask visual-studio-code`) plus the **Dev Containers** extension, then save this as `~/billiebot/.devcontainer/devcontainer.json`:
+If you use VS Code: install it (`brew install --cask visual-studio-code`) plus the **Dev Containers** extension, then save this as `~/billie-bot-claude/.devcontainer/devcontainer.json`:
 
 ```jsonc
 {
@@ -360,7 +388,7 @@ The motor-controller firmware is the ROSArduinoBridge fork at
 
    **Verify:** `ls /dev/cu.usbserial*` shows a device.
 
-2. Open Arduino IDE → *File → Open* → `~/billiebot/reference_my_bot/diff-drive-motor-controller/arduino-nano-firmware/ROSArduinoBridge/ROSArduinoBridge.ino`.
+2. Open Arduino IDE → *File → Open* → `~/billie-bot-claude/reference_my_bot/diff-drive-motor-controller/arduino-nano-firmware/ROSArduinoBridge/ROSArduinoBridge.ino`.
 
 3. Edit line 117 — change the motor-watchdog timeout from 2000 ms to **500 ms**:
 
@@ -489,12 +517,12 @@ jetson$ python3 -c "import depthai as dai; print(dai.Device.getAllAvailableDevic
 ### 2.2.4 Clone, build, configure
 
 ```bash
-jetson$ git clone <your-repo-url> ~/billiebot
-jetson$ cd ~/billiebot/billiebot_ws
+jetson$ git clone https://github.com/sean-mackenzie/billie-bot-claude.git ~/billie-bot-claude
+jetson$ cd ~/billie-bot-claude/billiebot_ws
 jetson$ source /opt/ros/humble/setup.bash
 jetson$ colcon build --symlink-install
 jetson$ echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc
-jetson$ echo 'source ~/billiebot/billiebot_ws/install/setup.bash' >> ~/.bashrc
+jetson$ echo 'source ~/billie-bot-claude/billiebot_ws/install/setup.bash' >> ~/.bashrc
 jetson$ echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> ~/.bashrc
 ```
 
@@ -584,14 +612,14 @@ Create the data directories on the **host** (bind-mounted so the SQLite DB and r
 ```bash
 pi$ sudo mkdir -p /var/lib/billiebot/snapshots /var/lib/billiebot/reports
 pi$ sudo chown -R $USER /var/lib/billiebot
-pi$ git clone <your-repo-url> ~/billiebot
+pi$ git clone https://github.com/sean-mackenzie/billie-bot-claude.git ~/billie-bot-claude
 pi$ docker build -t billiebot-pi -f ~/billiebot-pi.Dockerfile .
 pi$ docker run -it --name billiebot-pi \
       --privileged \
       --network host \
       -v /dev:/dev \
       -v /var/lib/billiebot:/var/lib/billiebot \
-      -v "$HOME/billiebot/billiebot_ws:/ws" \
+      -v "$HOME/billie-bot-claude/billiebot_ws:/ws" \
       billiebot-pi
 container$ colcon build --symlink-install && source install/setup.bash
 ```
@@ -643,7 +671,7 @@ This section applies on any machine (Mac container, Jetson, Pi container). `docs
 **1. Build:**
 
 ```bash
-cd <workspace>            # /ws in containers, ~/billiebot/billiebot_ws on the Jetson
+cd <workspace>            # /ws in containers, ~/billie-bot-claude/billiebot_ws on the Jetson
 colcon build --symlink-install
 source install/setup.bash
 ```

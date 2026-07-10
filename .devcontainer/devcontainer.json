@@ -1,0 +1,10 @@
+{
+  "name": "billiebot-dev",
+  "build": { "dockerfile": "../docker/Dockerfile" },
+  "workspaceMount": "source=${localWorkspaceFolder}/billiebot_ws,target=/ws,type=bind",
+  "workspaceFolder": "/ws",
+  "forwardPorts": [8765, 8080],
+  "customizations": {
+    "vscode": { "extensions": ["ms-python.python", "ms-iot.vscode-ros"] }
+  }
+}
