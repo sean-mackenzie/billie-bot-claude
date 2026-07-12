@@ -2,7 +2,7 @@
 
 **Audience:** a developer starting from a bare operating system.
 **Dev host targeted by Part 1:** 2024 MacBook Pro, Apple M4 Pro (arm64), 24 GB RAM, macOS Tahoe 26.x.
-**Robot targets covered by Part 2:** NVIDIA Jetson Orin Nano (JetPack 6 / Ubuntu 22.04), Raspberry Pi 4/5, Arduino Nano.
+**Robot targets covered by Part 2:** NVIDIA Jetson Orin Nano (JetPack 6 / Ubuntu 22.04), Raspberry Pi 5, Arduino Nano.
 
 This guide takes you from zero installed software to (1) building and running the **entire BillieBot stack in mock mode on your Mac**, and (2) provisioning the **robot's onboard computers** for real-hardware deployment. Every fork in the road is labeled **Recommended** or **Quickest**; each major step ends with a **Verify** check.
 
@@ -48,7 +48,7 @@ This guide takes you from zero installed software to (1) building and running th
 | Component | Role | Software that touches it |
 |---|---|---|
 | **Jetson Orin Nano** | Primary compute | Nav2, SLAM/AMCL, EKF, `base_bridge`, RPLidar driver, OAK-D detector, mission BT (`jetson.launch.py`) |
-| **Raspberry Pi 4** (design doc says Pi 5 — see [Appendix D](#appendix-d--known-discrepancies--decisions)) | Secondary compute | Thermal, NoIR camera, audio classifier/speaker, state fusion, SQLite logger, report server (`pi.launch.py`) |
+| **Raspberry Pi 5** | Secondary compute | Thermal, NoIR camera, audio classifier/speaker, state fusion, SQLite logger, report server (`pi.launch.py`) |
 | **Arduino Nano** (ATmega328) | Motor PID @ 30 Hz, encoders, battery ADC | ROSArduinoBridge firmware, serial 57600 baud to Jetson |
 | **RPLidar A1** | 2D lidar for SLAM/Nav | `rplidar_ros` (USB serial, 115200) |
 | **OAK-D Lite** | On-camera YOLOv8n spatial dog detection | `depthai` Python SDK (USB 3) |
@@ -534,7 +534,7 @@ Install the **YOLOv8n blob** for the OAK-D ([Appendix B](#appendix-b--ml-model-a
 
 Runs: thermal, NoIR, audio, cognition (`pi.launch.py` = rungs 09–12).
 
-> The README says Pi 4; the system design doc says Pi 5 (open item GAP-19 — see Appendix D). The steps below work on both.
+> The deployed board is a **Raspberry Pi 5** (design doc §5.1; naming previously drifted to "Pi 4" — closed as GAP-19). The steps below also work on a Pi 4 if you substitute one.
 
 ### 2.3.1 Flash the OS
 
@@ -835,7 +835,7 @@ The detector creates a `YoloSpatialDetectionNetwork` with a **416×416** preview
 
 | Item | Status |
 |---|---|
-| **Pi 4 vs Pi 5** | README/verification say Pi 4; `BillieBot_System_Design.md` §5.1 says Pi 5 (tracked as GAP-19 in `docs/DISCREPANCY_RESOLUTION_PLAN.md`). This guide's Pi section works on either. |
+| **Pi 4 vs Pi 5** | **Resolved (GAP-19, 2026-07-12):** the board is a **Raspberry Pi 5** (`BillieBot_System_Design.md` §5.1); all README/verification/config references are now aligned to Pi 5. Tracked in `docs/md/DISCREPANCY_RESOLUTION_PLAN.md`. |
 | **Serial baud rate** | Firmware and `base_driver.yaml` use **57600**; the design doc's 115200 is superseded (already noted in the README's Design Decisions). |
 | **`osrf/ros:humble-desktop` is amd64-only** | Checked against the Docker Hub API on 2026-07-05. This guide uses multi-arch `ros:humble` + apt desktop tools instead. |
 | **Launch files set `CYCLONEDDS_URI` but not `RMW_IMPLEMENTATION`** | `jetson.launch.py` / `pi.launch.py` point at the CycloneDDS config, but selecting the CycloneDDS RMW is left to the environment — this guide exports it in `~/.bashrc`/Dockerfiles. Candidate code fix: add `SetEnvironmentVariable('RMW_IMPLEMENTATION', …)` to those launch files. |

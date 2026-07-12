@@ -13,7 +13,7 @@ BillieBot is a differential-drive robot with multi-modal sensing (stereo vision,
 | Component | Purpose |
 |-----------|---------|
 | Jetson Orin Nano | Primary compute (Nav2, OAK-D, mission) |
-| Raspberry Pi 4 | Secondary compute (thermal, NoIR, audio, cognition) |
+| Raspberry Pi 5 | Secondary compute (thermal, NoIR, audio, cognition) |
 | Arduino Nano | Motor PID control, encoder reading, battery ADC |
 | RPLidar A1 | 2D SLAM and navigation |
 | OAK-D Lite | Spatial dog detection (YOLOv8n + stereo depth) |
@@ -80,7 +80,7 @@ All rungs support `mock:=true` for hardware-free testing.
 # Jetson Orin Nano
 ros2 launch billiebot_bringup jetson.launch.py
 
-# Raspberry Pi 4
+# Raspberry Pi 5
 ros2 launch billiebot_bringup pi.launch.py
 ```
 

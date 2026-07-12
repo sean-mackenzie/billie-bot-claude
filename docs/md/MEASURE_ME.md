@@ -71,7 +71,7 @@ after mapping the apartment. The current values are placeholders.
 
 Update `billiebot_bringup/config/cyclonedds.xml` with actual IP addresses of:
 - Jetson Orin Nano (currently `192.168.1.100`)
-- Raspberry Pi 4 (currently `192.168.1.101`)
+- Raspberry Pi 5 (currently `192.168.1.101`)
 
 ## Patrol Waypoints
 
