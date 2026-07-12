@@ -25,7 +25,7 @@ BillieBot is a differential-drive indoor robot whose MVP mission is **observe-an
 | Host | Role | Nodes (per design §5.2 and the `jetson.launch.py`/`pi.launch.py` split) |
 |---|---|---|
 | **Jetson Orin Nano** | Real-time autonomy | `rplidar_node`, `base_bridge`, `ekf_filter_node`, `slam_toolbox`/`amcl`, Nav2 stack, `oakd_dog_detector`, `dog_locator`, mission nodes |
-| **Raspberry Pi 4/5** | Sensing & cognition | `thermal_node`, `noir_cam_node`, `audio_classifier`, `speaker_node`, `state_fusion`, `dog_logger`, `daily_report`, `report_server` |
+| **Raspberry Pi 5** | Sensing & cognition | `thermal_node`, `noir_cam_node`, `audio_classifier`, `speaker_node`, `state_fusion`, `dog_logger`, `daily_report`, `report_server` |
 | **Arduino Nano** | Hard real-time I/O | Encoder counting, PID @30 Hz, L298N PWM, battery ADC, 500 ms serial-heartbeat motor cutoff (`firmware/README.md`) |
 
 Multi-machine DDS uses CycloneDDS with multicast disabled and static unicast peers (`billiebot_bringup/config/cyclonedds.xml`: Jetson `192.168.1.100`, Pi `192.168.1.101`; placeholders per `docs/MEASURE_ME.md`). The `jetson.launch.py` and `pi.launch.py` files set `CYCLONEDDS_URI` to this config and launch the host-appropriate subset of rungs — they are deployment groupings, not rungs themselves.

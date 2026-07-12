@@ -65,7 +65,7 @@ Operational modes: `IDLE`, `PATROL`, `INVESTIGATE` (audio-cued), `TRACK_OBSERVE`
 | Execution environment | Block (§4.1) | Role | Software allocated |
 |---|---|---|---|
 | **Jetson Orin Nano** | `jet` | Real-time autonomy; keeps the perception→planning loop off Wi-Fi | `rplidar_node`, `base_bridge`, `ekf_filter_node`, `slam_toolbox`/`amcl`+`map_server`, Nav2 servers, `oakd_dog_detector`, `dog_locator`, `mission_controller`, engagement action servers |
-| **Raspberry Pi 4/5** | `pi` | Sensing & cognition companion; isolates bursty audio/thermal/logging work | `thermal_node`, `noir_cam_node`, `audio_classifier`, `speaker_node`, `state_fusion`, `dog_logger`, `daily_report`, `report_server` |
+| **Raspberry Pi 5** | `pi` | Sensing & cognition companion; isolates bursty audio/thermal/logging work | `thermal_node`, `noir_cam_node`, `audio_classifier`, `speaker_node`, `state_fusion`, `dog_logger`, `daily_report`, `report_server` |
 | **Arduino Nano V3** | `mcu` | Hard real-time I/O | Encoder ISRs, 30 Hz PID, L298N PWM/DIR, battery ADC, serial protocol, AUTO_STOP watchdog |
 
 Inter-host transport: ROS 2 over CycloneDDS, multicast disabled, static unicast peers (`billiebot_bringup/config/cyclonedds.xml`); Jetson↔Arduino over 57600-baud USB serial; operator access via Wi-Fi router (DDS to Foxglove/RViz, HTTP :8080 for reports).
@@ -357,7 +357,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 
 **Rover subsystem tier (BDD-01):** `mob` Mobility · `nav` Navigation & Autonomy (SW) · `per` Perception · `aud` Audio · `cog` Cognition & Logging (SW) · `cmp` Compute & Comms · `pwr` Power · `str` Structure/Chassis — as design §3.3, unchanged.
 
-**Execution-environment blocks (BDD-05):** `jet : Jetson Orin Nano`, `pi : Raspberry Pi 4/5`, `mcu : Arduino Nano V3`. All `«rosNode»` blocks below are allocated to one of these (allocation matrix §5.3).
+**Execution-environment blocks (BDD-05):** `jet : Jetson Orin Nano`, `pi : Raspberry Pi 5`, `mcu : Arduino Nano V3`. All `«rosNode»` blocks below are allocated to one of these (allocation matrix §5.3).
 
 **«rosNode» blocks** (bold = BillieBot-authored; others are upstream ROS packages configured by this repo):
 
@@ -488,7 +488,7 @@ flowchart TB
     subgraph JET["jet : Jetson Orin Nano"]
         JROS["ROS 2 autonomy stack"]
     end
-    subgraph PI["pi : Raspberry Pi 4/5"]
+    subgraph PI["pi : Raspberry Pi 5"]
         PROS["ROS 2 sensing and cognition"]
     end
     subgraph MCU["mcu : Arduino Nano V3"]
@@ -594,7 +594,7 @@ flowchart LR
         MC["mission_controller"]
         AS["action servers: approach_dog, retreat, speak, dispense_treat"]
     end
-    subgraph PI["pi : Raspberry Pi 4/5"]
+    subgraph PI["pi : Raspberry Pi 5"]
         TH["thermal_node"]
         NC["noir_cam_node"]
         AC["audio_classifier"]
@@ -1113,7 +1113,7 @@ Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code 
 | GAP-16 | Rung 01 mock branch launches a base_bridge stub — no mock `/scan`; SLAM/AMCL/costmap rungs unexercisable in mock | NAV-04, PLT-06 | F (dedicated mock scan publisher) |
 | GAP-17 | Speak action naming split: `/speak` (speaker_node) vs `/mission/speak` (wrapper); BT XML `Speak` id binds to neither | AUD-06 | F (canonical name) or M |
 | GAP-18 | `/oak/rgb/preview` in design §5.2 but not published (operator visualization) | SYS-PLT-4 (minor) | M or F |
-| GAP-19 | Host naming drift: design says Pi 5; configs/README say Pi 4 | documentation only | M |
+| GAP-19 | Host naming drift: design says Pi 5; configs/README say Pi 4 — **Resolved 2026-07-12**, all references aligned to Raspberry Pi 5 | documentation only | M |
 
 ---
 

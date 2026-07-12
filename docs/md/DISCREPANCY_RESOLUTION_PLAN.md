@@ -38,7 +38,7 @@
 | GAP-1 | Mission is a Python state machine; designed BT is compiled but never run | 🟠 | F* | D | L | SYS-EXT-2, MSN-01/12, EXT-02 | Open (decision) |
 | GAP-2 | IMU dormant — BNO055 blocked by A4/A5 encoder pin conflict | 🟠 | H | D | M | NAV-06 | Open (hardware) |
 | GAP-18 | `/oak/rgb/preview` in design but not published | 🟡 | F/M | D | S | SYS-PLT-4 (minor) | Open |
-| GAP-19 | Docs say Raspberry Pi 5, configs/README say Pi 4 | ⚪ | M | D | S | doc-only | Open |
+| GAP-19 | Docs say Raspberry Pi 5, configs/README say Pi 4 | ⚪ | M | D | S | doc-only | Resolved (2026-07-12) |
 
 \* GAP-1 disposition depends on a sponsor decision (see sheet).
 
@@ -285,13 +285,14 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
 
 #### GAP-19 — Pi 4 vs. Pi 5 naming drift
 
-**Status:** Open · **Severity:** ⚪ Doc-only · **Disposition:** M · **Effort:** S
+**Status:** Resolved (2026-07-12) · **Severity:** ⚪ Doc-only · **Disposition:** M · **Effort:** S
 
-- **What/Where:** Design doc says Raspberry Pi 5; `README.md` ("Raspberry Pi 4", twice), `docs/VERIFICATION.md` ("Raspberry Pi 4:"), and comments in `cyclonedds.xml`/`base_driver.yaml` reference Pi 4.
+- **What/Where:** Design doc says Raspberry Pi 5; `README.md` ("Raspberry Pi 4", twice), `docs/VERIFICATION.md` ("Raspberry Pi 4:"), and a comment in `cyclonedds.xml` referenced Pi 4; several guides/MBSE diagrams hedged with "Pi 4/5". (The sheet's original mention of `base_driver.yaml` was stale — that file carries no Pi reference.)
 - **Why it matters:** Whichever board is actually deployed changes the camera stack (Pi 5 dual CSI + picamera2 requirements), PD power board suitability (design §4.2 assumes Pi 5's 5 V/5 A USB-C PD), and Docker/OS choices (design §5.1).
 - **Recommended fix:** Confirm the physical board, then sweep all references to the same truth: `grep -rn "Pi 4\|Pi 5\|Raspberry" README.md docs/ billiebot_ws/src/billiebot_bringup/config/ billiebot_ws/src/billiebot_base/config/` and align. If it's a Pi 4, also revisit the power budget line items in the design doc.
-- **Verify closure:** The grep above returns a single consistent board name.
-- **Risks/notes:** None; do alongside any doc touch.
+- **Resolution:** Board confirmed as **Raspberry Pi 5**. Swept every reference to Pi 5 — `README.md` (hardware table + launch comment), `docs/md/VERIFICATION.md`, `docs/md/MEASURE_ME.md`, `docs/md/BRINGUP_LADDER_ANALYSIS.md`, `docs/md/MBSE_SYSTEM_DECOMPOSITION.md` (table + BDD text + both mermaid subgraph labels), `docs/md/INSTALLATION_AND_SETUP.md` (target list, hardware table, §2.3 note, Appendix D), and `billiebot_ws/src/billiebot_bringup/config/cyclonedds.xml` comments. The design doc (source of truth) already read Pi 5, so its power budget is unchanged. Generic strings ("Pi Camera 3 NoIR", "Raspberry Pi-only nodes") and read-only `reference_my_bot/` left as-is.
+- **Verify closure:** The grep above returns a single consistent board name (Pi 5); no active "Pi 4" board reference remains outside this historical record.
+- **Risks/notes:** None; done alongside the doc sweep.
 
 ---
 

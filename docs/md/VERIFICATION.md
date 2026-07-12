@@ -118,7 +118,7 @@ ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
 ros2 launch billiebot_bringup jetson.launch.py
 ```
 
-**Raspberry Pi 4:**
+**Raspberry Pi 5:**
 ```bash
 ros2 launch billiebot_bringup pi.launch.py
 ```
