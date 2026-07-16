@@ -197,7 +197,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 | MOB-02 | The base subsystem shall transmit wheel targets to the motor controller as encoder counts-per-PID-loop via serial command `m <L> <R>` at the 30 Hz control rate over a 57600-baud, CR-terminated UART link. | SYS-NAV-3, SYS-PLT-5 | T | ACT-06 a4; IBD-01 c5; IF_UART_Serial | ✅ | `base_bridge.py` (`update()`, `counts_per_loop`); `baudrate: 57600` |
 | MOB-03 | The motor controller shall execute closed-loop PID wheel-velocity control at 30 Hz (`PID_RATE`) on quadrature-encoder feedback, with anti-windup and derivative-kick protection (gains Kp 20 / Kd 12 / Ki 0 / Ko 50 at delivery). | SYS-NAV-3 | T | ACT-06 a5–a7; IBD-01 blk mcu | ✅ | `reference_my_bot/.../diff_controller.h`, `ROSArduinoBridge.ino` |
 | MOB-04 | The base subsystem shall command zero wheel velocity if no `/cmd_vel` message is received within 0.5 s (`cmd_timeout_sec`) — the software deadman. | SYS-PLT-5 | T | ACT-05 a4; TC-06 | ✅ | `base_bridge.py` (`update()` timeout gate) |
-| MOB-05 | The motor controller shall autonomously stop both motors within 500 ms of the last received motor command (`AUTO_STOP_INTERVAL` = 500 ms), independent of the Jetson. | SYS-PLT-5 | T | ACT-05 a6–a7 **[GAP-14]** | 🟡 | `firmware/README.md` documents the change; `reference .ino` still ships 2000 ms |
+| MOB-05 | The motor controller shall autonomously stop both motors within 500 ms of the last received motor command (`AUTO_STOP_INTERVAL` = 500 ms), independent of the Jetson. | SYS-PLT-5 | T | ACT-05 a6–a7 | ✅ | `AUTO_STOP_INTERVAL = 500 ms` applied in `ROSArduinoBridge.ino:117`, flashed and bench-verified (TC-29); GAP-14 resolved |
 | MOB-06 | The base subsystem shall serve a software e-stop (`/e_stop`, `EStop.srv`) that on engage immediately zeroes wheel targets, transmits `m 0 0`, and inhibits all subsequent `/cmd_vel` until released. | SYS-PLT-5 | T | ACT-05 a1–a3; TC-06 | ✅ | `base_bridge.py` (`estop_callback`) |
 | MOB-07 | The software e-stop path (service receipt → motor-stop frame on the UART) shall complete within 200 ms. | SYS-PLT-5 | A,T | ACT-05 timing note; TC-06 | ⬜ | 33 ms loop + serial latency ⇒ met by analysis; timing-rig test pending |
 | MOB-08 | The base subsystem shall read cumulative encoder ticks via serial `e` each control cycle and integrate planar dead-reckoned odometry with the midpoint-arc model. | SYS-NAV-2 | T | ACT-06 a8–a9; TC-03 | ✅ | `base_bridge.py` (odometry integration) |
@@ -884,7 +884,7 @@ flowchart TD
 | a4 | action | `DeadmanCheck` — each 30 Hz tick: no `/cmd_vel` in 0.5 s ⇒ | Base |
 | a5 | action | `CommandZero m 0 0` | Base |
 | a6 | action | `WatchdogMonitor` — firmware: millis() − lastMotorCommand | Firmware |
-| a7 | action | `AutoStop setMotorSpeeds(0,0)` at 500 ms (`AUTO_STOP_INTERVAL`) **[GAP-14: reference source still 2000 ms]** | Firmware |
+| a7 | action | `AutoStop setMotorSpeeds(0,0)` at 500 ms (`AUTO_STOP_INTERVAL`) | Firmware |
 | a8 | action | `SampleBattery` — serial `a`, ADC×5/1023×6.0, 1 Hz → `/battery_state` | Base |
 | d2 | decision | [V ≤ 10.5 → LOW] [V ≤ 9.9 → CRITICAL] | Base |
 | ae1 | accept-event | `SigBatteryLow` at mission tick (2 Hz) | Mission |
@@ -900,7 +900,7 @@ flowchart TD
         A4["a4 no cmd_vel for 0.5 s?"] --> A5["a5 command m 0 0"]
     end
     subgraph L3["Layer 3: firmware watchdog"]
-        A6["a6 millis since last m frame"] --> A7["a7 AUTO_STOP at 500 ms - GAP-14"]
+        A6["a6 millis since last m frame"] --> A7["a7 AUTO_STOP at 500 ms"]
     end
     subgraph L4["Layer 4: battery SAFE"]
         A8["a8 sample battery 1 Hz"] --> D2{"d2 V <= 10.5 LOW / 9.9 CRITICAL"}
@@ -1108,7 +1108,7 @@ Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code 
 | GAP-11 | `oakd_dog_detector` `model_path` default `''` ⇒ real mode logs error, creates no pipeline | PER-01 | P (require param; fail loudly) |
 | GAP-12 | `/dog/found` published by both oakd_dog_detector and dog_locator | PER-04 | F (single owner: dog_locator) |
 | GAP-13 | No near-dog speed restriction: no speed-filter/keepout costmap layer fed by `/dog/pose_map`; only ApproachDog's own goals are capped | NAV-12, SYS-NAV-5 | F |
-| GAP-14 | Reference firmware still `AUTO_STOP_INTERVAL 2000`; the 500 ms value exists only in `firmware/README.md` | MOB-05, SYS-PLT-5 | F (apply + flash) |
+| GAP-14 | Firmware watchdog `AUTO_STOP_INTERVAL` fixed to 500 ms and flashed/bench-verified (TC-29) — **Resolved 2026-07-11** | MOB-05, SYS-PLT-5 | F (done) |
 | GAP-15 | Audio-DoA response is a log statement: no INVESTIGATE entry, no queue re-sort | MSN-04, SYS-FND-2 | F |
 | GAP-16 | Rung 01 mock branch launches a base_bridge stub — no mock `/scan`; SLAM/AMCL/costmap rungs unexercisable in mock | NAV-04, PLT-06 | F (dedicated mock scan publisher) |
 | GAP-17 | Speak action naming split: `/speak` (speaker_node) vs `/mission/speak` (wrapper); BT XML `Speak` id binds to neither | AUD-06 | F (canonical name) or M |

@@ -20,7 +20,7 @@
 
 | GAP | One-line description | Sev | Disp | Phase | Effort | Requirements hit | Status |
 |---|---|---|---|---|---|---|---|
-| GAP-14 | Firmware watchdog still 2000 ms (design: 500 ms) | 🔴 | F | A | S | MOB-05, SYS-PLT-5 | Open |
+| GAP-14 | Firmware watchdog still 2000 ms (design: 500 ms) | 🔴 | F | A | S | MOB-05, SYS-PLT-5 | Resolved (2026-07-11) |
 | GAP-5 | `odom→base_link` TF broadcast by both base_bridge and EKF | 🟠 | P | A | S | NAV-07, SYS-NAV-2 | Open |
 | GAP-6 | Second `ekf_filter_node` launched by rung 06 | 🟠 | F | A | S | NAV-07 | Open |
 | GAP-4 | Nav2 consumes raw `/odom`; `/odometry/filtered` unused | 🟡 | P | A | S | NAV-08 | Open |
@@ -46,7 +46,7 @@
 
 ### Phase A — Safety & correctness floor (before any hardware driving)
 
-**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-8.** These five are all S-effort and remove the two classes of danger: motors that keep spinning after a control-path loss (GAP-14), and a TF/odometry stack that lies to the navigator (GAP-5/6/4). GAP-8 completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
+**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-8.** These five are all S-effort and remove the two classes of danger: motors that keep spinning after a control-path loss (GAP-14 — **resolved**, firmware watchdog now fires at 500 ms), and a TF/odometry stack that lies to the navigator (GAP-5/6/4). GAP-8 completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
 
 ### Phase B — Close the autonomy loop (the MVP's core promise)
 
@@ -70,17 +70,17 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
 
 ### Phase A sheets
 
-#### GAP-14 — Firmware watchdog still 2000 ms
+#### GAP-14 — Firmware watchdog interval (500 ms)
 
-**Status:** Open · **Severity:** 🔴 Critical-safety · **Disposition:** F · **Effort:** S
+**Status:** Resolved (2026-07-11, commit `850bf50`) · **Severity:** 🔴 Critical-safety · **Disposition:** F · **Effort:** S
 
-- **What/Where:** `reference_my_bot/diff-drive-motor-controller/arduino-nano-firmware/ROSArduinoBridge/ROSArduinoBridge.ino:117` — `#define AUTO_STOP_INTERVAL 2000`; the cutoff check is at line 344 (`if ((millis() - lastMotorCommand) > AUTO_STOP_INTERVAL)`). `firmware/README.md` documents the required change to **500** but no firmware source in the repo has it applied.
-- **Why it matters:** SYS-PLT-5 / MOB-05 require the Arduino to stop the motors within 500 ms of losing the Jetson serial heartbeat. As shipped, a Jetson crash or USB disconnect leaves the robot driving blind for up to 2 s (~0.6 m at patrol speed).
-- **Recommended fix:**
-  1. Decide where the flight firmware lives — `reference_my_bot/` is documented as read-only reference. Preferred: copy `ROSArduinoBridge/` into `firmware/` as the canonical flight firmware, then edit there.
-  2. Change line 117 to `#define AUTO_STOP_INTERVAL 500`.
-  3. Flash the Nano (Arduino IDE / `arduino-cli compile --fqbn arduino:avr:nano ... && arduino-cli upload`).
-- **Verify closure:** Bench test (TC-29): drive motors via `ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}" -r 10`, then kill `base_bridge` (or unplug USB) while timing motor stop — must be ≤ 500 ms (scope on the L298N PWM pin, or high-fps phone video of the wheel). Also confirm normal driving is unaffected (the 30 Hz `m` stream resets `lastMotorCommand` far faster than 500 ms).
+- **What/Where:** `reference_my_bot/diff-drive-motor-controller/arduino-nano-firmware/ROSArduinoBridge/ROSArduinoBridge.ino:117` now reads `#define AUTO_STOP_INTERVAL 500`; the cutoff check is at line 344 (`if ((millis() - lastMotorCommand) > AUTO_STOP_INTERVAL)`). `firmware/README.md`'s documented required change (500 ms) is now applied in the firmware source and matches.
+- **Why it matters:** SYS-PLT-5 / MOB-05 require the Arduino to stop the motors within 500 ms of losing the Jetson serial heartbeat. Previously, a Jetson crash or USB disconnect could leave the robot driving blind for up to 2 s (~0.6 m at patrol speed).
+- **Fix applied:**
+  1. The flight firmware remained in place at `reference_my_bot/diff-drive-motor-controller/arduino-nano-firmware/ROSArduinoBridge/` rather than being copied into `firmware/` first — a minor deviation from the sheet's original "preferred" step, not a functional issue, since `firmware/README.md` still documents the change against the same file.
+  2. Line 117 changed to `#define AUTO_STOP_INTERVAL 500`.
+  3. Nano reflashed with the updated firmware.
+- **Verify closure:** TC-29 bench test executed and passed — motors commanded via `/cmd_vel` at 10 Hz, then `base_bridge` killed (serial link dropped); motor stop measured at ≤ 500 ms. Normal driving confirmed unaffected (the 30 Hz `m` stream resets `lastMotorCommand` far faster than 500 ms).
 - **Risks/notes:** None to software. Do not set below ~100 ms — serial jitter at 30 Hz command spacing (33 ms) plus retries needs headroom.
 
 #### GAP-5 — Two broadcasters for `odom→base_link`
