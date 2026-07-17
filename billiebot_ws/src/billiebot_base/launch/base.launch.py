@@ -11,9 +11,13 @@ def generate_launch_description():
     config_file = os.path.join(pkg_share, 'config', 'base_driver.yaml')
 
     mock = LaunchConfiguration('mock')
+    publish_tf = LaunchConfiguration('publish_tf')
 
     return LaunchDescription([
         DeclareLaunchArgument('mock', default_value='false'),
+        # odom->base_link is owned by the EKF from rung 03 up (GAP-5);
+        # set true only for rung-02-only bench work with no EKF running.
+        DeclareLaunchArgument('publish_tf', default_value='false'),
 
         Node(
             package='billiebot_base',
@@ -21,7 +25,7 @@ def generate_launch_description():
             name='base_bridge',
             parameters=[
                 config_file,
-                {'mock': mock},
+                {'mock': mock, 'publish_tf': publish_tf},
             ],
             output='screen',
         ),

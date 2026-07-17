@@ -217,7 +217,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 | NAV-04 | A mock scan source shall exist so rungs 01/04/05/06 are exercisable without hardware. | SYS-PLT-4 (testability) | D | ACT-08 **[GAP-16]** | ❌ | mock branch launches a `base_bridge` stub with no `/scan` publisher |
 | NAV-05 | The localization subsystem shall estimate map-frame pose with AMCL (500–2000 particles, likelihood-field model, differential motion model) and broadcast the `map→odom` transform; mean position error ≤ 0.15 m against surveyed ground truth. | SYS-NAV-2 | T | ACT-08 a7–a9; IBD-04 | ⬜ | `config/amcl_params.yaml`; quantitative test pending HW |
 | NAV-06 | The state-estimation subsystem shall fuse wheel odometry (and IMU when enabled) in a 30 Hz planar EKF publishing `/odometry/filtered`. | SYS-NAV-2 | T | ACT-06 a11; IBD-03 blk ekf **[GAP-2]** | 🟡 | `config/ekf.yaml`; `imu0` block commented out pending A4/A5 rewire |
-| NAV-07 | Exactly one component shall broadcast the `odom→base_link` transform at any time. | SYS-NAV-2 (derived, new) | T | IBD-04 note **[GAP-5, GAP-6]** | ❌ | `base_bridge` (`publish_tf: true`) **and** `ekf_filter_node` (`publish_tf: true`) both broadcast; EKF additionally launched twice by rung 06 |
+| NAV-07 | Exactly one component shall broadcast the `odom→base_link` transform at any time. | SYS-NAV-2 (derived, new) | T | IBD-04 note | ✅ | EKF sole broadcaster: `base_driver.yaml` `publish_tf` default `false` (rung-02 bench override via launch arg) and rung 06 starts a single `ekf_filter_node`; GAP-5/GAP-6 resolved 2026-07-17 |
 | NAV-08 | Nav2 consumers shall use the filtered odometry (`/odometry/filtered`), not raw `/odom`. | SYS-NAV-2 (derived, new) | I | IBD-03 c6 **[GAP-4]** | ❌ | `nav2_params.yaml` `bt_navigator.odom_topic: /odom` |
 | NAV-09 | The navigation subsystem shall plan global collision-free paths (NavFn, 0.5 m tolerance) and execute them with a 20 Hz local controller (DWB) using layered costmaps (static + obstacle + inflation) fed by `/scan`. | SYS-NAV-3 | D | ACT-01 a6; IBD-03 blk nav2; TC-16 | ✅ | `config/nav2_params.yaml` |
 | NAV-10 | The local costmap shall mark and clear dynamic obstacles from `/scan` within 2.5 m so paths replan around moving obstacles including the dog. | SYS-NAV-3 | D | ACT-01 a6 note; TC-16 | ✅ | `nav2_params.yaml` obstacle layer |
@@ -550,7 +550,7 @@ The authoritative as-intended ROS graph. Parts are `«rosNode»` blocks allocate
 | c3 | `/joint_states` | `sensor_msgs/JointState` | **base_bridge** → robot_state_publisher | 30 Hz | wheel TF |
 | c4 | `/battery_state` | `sensor_msgs/BatteryState` | **base_bridge** → **mission_controller** | 1 Hz | SAFE-mode input |
 | c5 | `/scan` | `sensor_msgs/LaserScan` | rplidar_node → slam_toolbox ∥ amcl, both costmaps | ~5.5–8 Hz | no mock source **[GAP-16]** |
-| c6 | `/odometry/filtered` | `nav_msgs/Odometry` | ekf_filter_node → *(intended: Nav2)* | 30 Hz | currently unconsumed **[GAP-4]**; EKF launched twice **[GAP-6]** |
+| c6 | `/odometry/filtered` | `nav_msgs/Odometry` | ekf_filter_node → *(intended: Nav2)* | 30 Hz | currently unconsumed **[GAP-4]** |
 | c7 | `/dog/detections_3d` | `DogDetection3D` | **oakd_dog_detector** → **dog_locator**, **state_fusion** | 5 Hz | |
 | c8 | `/dog/pose_map` | `geometry_msgs/PoseStamped` | **dog_locator** → **state_fusion**, **approach_dog_server** | ≤ 5 Hz | map-frame dog pose |
 | c9 | `/thermal/image` | `sensor_msgs/Image` 32FC1 | **thermal_node** → (viewer) | 4 Hz | |
@@ -561,7 +561,7 @@ The authoritative as-intended ROS graph. Parts are `«rosNode»` blocks allocate
 | c16 | `/billiebot/mission_status` | `MissionStatus` | **mission_controller** → operator | 2 Hz | |
 | c19 | `/dog/found` | `std_msgs/Bool` | **oakd_dog_detector** ∥ **dog_locator** → **mission_controller** | 5 Hz | dual publisher **[GAP-12]** |
 | c20 | `/map` | `nav_msgs/OccupancyGrid` | slam_toolbox *(mapping)* ∥ map_server *(localization)* → costmaps, host | 0.2 Hz / latched | alternatives, never simultaneous |
-| c21 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | see IBD-04 | 30–50 Hz | odom→base_link dual broadcast **[GAP-5]** |
+| c21 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | see IBD-04 | 30–50 Hz | odom→base_link single owner (EKF) since GAP-5 resolution |
 | c22 | `/robot_description` | `std_msgs/String` | robot_state_publisher → tools | latched | TC-02 |
 | c23 | `/amcl_pose`, `/particle_cloud`, `/initialpose` | nav2 types | amcl ↔ operator | on update | relocalization surface |
 | c24 | `/plan`, `/local_costmap/costmap`, `/global_costmap/costmap` | `Path`, `OccupancyGrid` | Nav2 servers → host | 1–2 Hz | visualization/verification |
@@ -641,14 +641,14 @@ REP-105 chain plus the URDF sensor frames — required to verify PER-07, NAV-05/
 | Transform | Broadcaster | Rate | Status |
 |---|---|---|---|
 | `map → odom` | amcl (localization) ∥ slam_toolbox (mapping) | on update / 50 Hz | ✅ correct single owner per session type |
-| `odom → base_link` | **base_bridge AND ekf_filter_node (×2 instances)** | 30 Hz each | ❌ **[GAP-5, GAP-6]** — three contending broadcasters when rung 06 runs; NAV-07 |
+| `odom → base_link` | ekf_filter_node (rungs 03+; base_bridge only with explicit `publish_tf:=true` bench override at rung 02) | 30 Hz | ✅ single owner; NAV-07 — GAP-5/GAP-6 resolved 2026-07-17 |
 | `base_link → chassis`, `chassis → laser_frame / oakd_link → oakd_link_optical / noir_link → noir_link_optical / thermal_link → thermal_link_optical / mic_link / imu_link(off)` | robot_state_publisher (`/tf_static`) | latched | ✅ positions are `TODO(measure)` placeholders (MEASURE_ME) |
 | `base_link → left/right_wheel` | robot_state_publisher from `/joint_states` | 30 Hz | ✅ |
 
 ```mermaid
 flowchart TD
     MAP["map"] -- "amcl or slam_toolbox" --> ODOM["odom"]
-    ODOM -- "base_bridge AND ekf x2 -- GAP-5/6" --> BL["base_link"]
+    ODOM -- "ekf_filter_node (single owner)" --> BL["base_link"]
     BL --> CH["chassis"]
     BL --> LW["left_wheel"]
     BL --> RW["right_wheel"]
@@ -981,7 +981,7 @@ flowchart TD
 | a1 | action | `SetDDSConfig` — `CYCLONEDDS_URI` → cyclonedds.xml (multicast off, peers .100/.101); launch `jetson.launch.py` / `pi.launch.py` | both |
 | a2 | action | `StartDrivers` — rplidar (`/scan`), base_bridge (serial connect, `r` reset) — mock branch **[GAP-16: no mock /scan]** | Jetson |
 | a3 | action | `StartDescription` — robot_state_publisher: `/robot_description`, `/tf_static` sensor frames | Jetson |
-| a4 | action | `StartEKF` (single instance required — **[GAP-6]** rung 06 starts two) | Jetson |
+| a4 | action | `StartEKF` (single instance — rung 03's `ekf_filter_node`; GAP-6 resolved) | Jetson |
 | d1 | decision | [mapping session?] → a5; [localization session?] → a7 | Operator |
 | a5 | action | `SLAMMapping` — slam_toolbox builds `/map` while operator teleops apartment | Jetson |
 | a6 | action | `SaveMap` — YAML+PGM artifact (input to a7 and to rooms/waypoint configs) | Operator |
@@ -994,7 +994,7 @@ flowchart TD
 flowchart TD
     A1["a1 set CYCLONEDDS_URI, launch per host"] --> A2["a2 drivers: lidar + base - GAP-16 mock scan missing"]
     A2 --> A3["a3 robot_state_publisher TF static"]
-    A3 --> A4["a4 EKF single instance - GAP-6 duplicated today"]
+    A3 --> A4["a4 EKF single instance - GAP-6 resolved"]
     A4 --> D1{"d1 mapping or localization?"}
     D1 -- mapping --> A5["a5 slam_toolbox + teleop drive"] --> A6["a6 save map artifact"]
     D1 -- localization --> A7["a7 map_server load map"] --> A8["a8 AMCL initial pose"] --> A9["a9 lifecycle activate + converge"]
@@ -1099,8 +1099,8 @@ Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code 
 | GAP-2 | `/imu/data` never published; EKF `imu0` commented out; BNO055 blocked by A4/A5 encoder pin conflict | NAV-06 | H (rewire per MEASURE_ME) then P |
 | GAP-3 | `BatteryStatus.msg` defined, published by nothing (`sensor_msgs/BatteryState` used instead) | IFC-06 | M (delete) or F (adopt) |
 | GAP-4 | `bt_navigator.odom_topic` = raw `/odom`; `/odometry/filtered` unconsumed | NAV-08 | P |
-| GAP-5 | `odom→base_link` broadcast by both base_bridge and EKF (`publish_tf: true` twice) | NAV-07 | P (disable in `base_driver.yaml` when EKF runs) |
-| GAP-6 | Second `ekf_filter_node` launched by `navigation.launch.py` on top of rung 03's | NAV-07 | F (remove duplicate include) |
+| GAP-5 | `odom→base_link` dual broadcast fixed: `base_driver.yaml` `publish_tf` default `false`, EKF sole owner, `publish_tf` launch arg for rung-02 bench work — **Resolved 2026-07-17** | NAV-07 | P (done) |
+| GAP-6 | Second `ekf_filter_node` removed from `navigation.launch.py`; rung 03's EKF is the single instance — **Resolved 2026-07-17** | NAV-07 | F (done) |
 | GAP-7 | Mission never sends Nav2 goals; `_nav_failure_count` never incremented — patrol dispatch and SAFE escalation dormant | MSN-05, NAV-14, SYS-NAV-4/6, SYS-FND-1 | F (largest functional gap) |
 | GAP-8 | `_estopped` never set — mission SAFE-on-estop branch and `MissionStatus.estopped` dead | MSN-02 | F (subscribe/estop-state service from base_bridge) |
 | GAP-9 | dog_logger narrower than design: snapshots are empty placeholder files; `action`/`outcome` not captured from action results; no `/events/last` | STL-12, STL-13, STL-14, RPT-02, EXT-03 | F |

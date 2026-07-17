@@ -21,8 +21,8 @@
 | GAP | One-line description | Sev | Disp | Phase | Effort | Requirements hit | Status |
 |---|---|---|---|---|---|---|---|
 | GAP-14 | Firmware watchdog still 2000 ms (design: 500 ms) | 🔴 | F | A | S | MOB-05, SYS-PLT-5 | Resolved (2026-07-11) |
-| GAP-5 | `odom→base_link` TF broadcast by both base_bridge and EKF | 🟠 | P | A | S | NAV-07, SYS-NAV-2 | Open |
-| GAP-6 | Second `ekf_filter_node` launched by rung 06 | 🟠 | F | A | S | NAV-07 | Open |
+| GAP-5 | `odom→base_link` TF broadcast by both base_bridge and EKF | 🟠 | P | A | S | NAV-07, SYS-NAV-2 | Resolved (2026-07-17) |
+| GAP-6 | Second `ekf_filter_node` launched by rung 06 | 🟠 | F | A | S | NAV-07 | Resolved (2026-07-17) |
 | GAP-4 | Nav2 consumes raw `/odom`; `/odometry/filtered` unused | 🟡 | P | A | S | NAV-08 | Open |
 | GAP-8 | Mission never learns of e-stop (`_estopped` never set) | 🟠 | F | A | S | MSN-02 | Open |
 | GAP-7 | Mission never dispatches Nav2 goals; failure counter dead | 🟠 | F | B | L | MSN-05, NAV-14, SYS-NAV-4/6, SYS-FND-1 | Open |
@@ -46,7 +46,7 @@
 
 ### Phase A — Safety & correctness floor (before any hardware driving)
 
-**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-8.** These five are all S-effort and remove the two classes of danger: motors that keep spinning after a control-path loss (GAP-14 — **resolved**, firmware watchdog now fires at 500 ms), and a TF/odometry stack that lies to the navigator (GAP-5/6/4). GAP-8 completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
+**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-8.** These five are all S-effort and remove the two classes of danger: motors that keep spinning after a control-path loss (GAP-14 — **resolved**, firmware watchdog now fires at 500 ms), and a TF/odometry stack that lies to the navigator (GAP-5/6 — **resolved 2026-07-17**, landed together: the EKF is now the sole `odom→base_link` owner and rung 06 starts exactly one `ekf_filter_node`; GAP-4 remains). GAP-8 completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
 
 ### Phase B — Close the autonomy loop (the MVP's core promise)
 
@@ -85,23 +85,26 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
 
 #### GAP-5 — Two broadcasters for `odom→base_link`
 
-**Status:** Open · **Severity:** 🟠 Major-functional · **Disposition:** P · **Effort:** S
+**Status:** Resolved (2026-07-17, PR `fix/gap-5-6-tf-single-owner`) · **Severity:** 🟠 Major-functional · **Disposition:** P · **Effort:** S
 
 - **What/Where:** `…/src/billiebot_base/config/base_driver.yaml:28` — `publish_tf: true` (its own comment says "disable when EKF provides odom->base_link"); `…/src/billiebot_navigation/config/ekf.yaml:9` — `publish_tf: true`. The base broadcast happens in `base_bridge.py:368` (`publish_tf_odom`, gated by the `publish_tf` param declared at line 116).
 - **Why it matters:** NAV-07. Two (with GAP-6, three) broadcasters fight over the same transform at 30 Hz. In mock they agree (masking the bug); on hardware the EKF-smoothed pose diverges from raw integration and TF consumers (AMCL, costmaps, dog_locator) see time-interleaved jumps.
-- **Recommended fix:** The EKF owns the transform whenever it runs (rungs 03+). Set `publish_tf: false` in `base_driver.yaml:28`. For rung-02-only bench work (no EKF), pass `publish_tf:=true` as a launch override rather than keeping it as the config default — or add a `publish_tf` launch argument to `…/src/billiebot_base/launch/base.launch.py` defaulting false.
-- **Verify closure:** With rung 03 up: `ros2 run tf2_ros tf2_echo odom base_link` shows a smooth stream; `ros2 topic echo /tf | grep -A2 base_link` shows a single publisher cadence. Definitive check: `ros2 topic info /tf --verbose` lists expected publisher count (TC-24). With rung 02 only + override, TF must still exist.
-- **Risks/notes:** Close together with GAP-6 — otherwise the "one owner" check still fails due to the duplicate EKF.
+- **Fix applied:** The EKF owns the transform whenever it runs (rungs 03+); `ekf.yaml`'s `publish_tf: true` is unchanged and now correct-by-ownership.
+  1. `base_driver.yaml:28` — `publish_tf` default flipped to `false` (comment updated with the bench-override recipe).
+  2. `…/src/billiebot_base/launch/base.launch.py` and `…/src/billiebot_bringup/launch/02_base.launch.py` — new `publish_tf` launch argument (default `false`), so rung-02-only bench work can restore the base broadcast with `ros2 launch billiebot_bringup 02_base.launch.py publish_tf:=true`.
+  3. `base_bridge.py:158` — the `TransformBroadcaster` is now only created when `publish_tf` is true, so a disabled base_bridge no longer registers an idle `/tf` publisher (keeps the TC-24 publisher-count check meaningful).
+- **Verify closure (executed 2026-07-17, mock stack in the `billiebot-dev` Docker container):** With rung 06 up (includes rung 03): `ros2 topic info /tf --verbose` lists `ekf_filter_node`, `amcl`, `robot_state_publisher`, `bt_navigator` — **no `base_bridge`**; `tf2_echo odom base_link` streams (EKF-owned). Rung 02 only, default: `publish_tf` = `False`, no `odom→base_link` (expected — no EKF at rung 02). Rung 02 only with `publish_tf:=true`: param `True`, `tf2_echo odom base_link` streams from base_bridge. `verify_rung_02.sh` passes in both rung-02 configurations.
+- **Risks/notes:** Closed together with GAP-6 (same PR), as required for the "one owner" check to hold.
 
 #### GAP-6 — EKF launched twice by rung 06
 
-**Status:** Open · **Severity:** 🟠 Major-functional · **Disposition:** F · **Effort:** S
+**Status:** Resolved (2026-07-17, PR `fix/gap-5-6-tf-single-owner`) · **Severity:** 🟠 Major-functional · **Disposition:** F · **Effort:** S
 
-- **What/Where:** `…/src/billiebot_navigation/launch/navigation.launch.py:19-29` starts an `ekf_filter_node` (loading `ekf.yaml`), but `…/src/billiebot_bringup/launch/06_nav2.launch.py:21-26` already includes `05_amcl.launch.py` → `03_ekf.launch.py`, which starts the same node. Result: two `ekf_filter_node` processes, duplicate `/odometry/filtered` publishers and TF broadcasts.
+- **What/Where:** `…/src/billiebot_navigation/launch/navigation.launch.py:19-29` started an `ekf_filter_node` (loading `ekf.yaml`), but `…/src/billiebot_bringup/launch/06_nav2.launch.py:21-26` already includes `05_amcl.launch.py` → `03_ekf.launch.py`, which starts the same node. Result: two `ekf_filter_node` processes, duplicate `/odometry/filtered` publishers and TF broadcasts.
 - **Why it matters:** NAV-07 (with GAP-5); also confusing diagnostics (`ros2 node list` shows the name collision).
-- **Recommended fix:** Delete the EKF `Node(...)` block from `navigation.launch.py` (lines 19-29). Rationale: keep `navigation.launch.py` purely Nav2 (its name says so); the ladder's `03_ekf` rung is the canonical EKF owner and every path into `navigation.launch.py` (rung 06, `jetson.launch.py`) already includes it.
-- **Verify closure:** `ros2 launch billiebot_bringup 06_nav2.launch.py mock:=true map:=<map>` then `ros2 node list | grep -c ekf_filter_node` → exactly 1.
-- **Risks/notes:** If anyone launches `navigation.launch.py` standalone they must now bring their own EKF — note it in the launch file docstring.
+- **Fix applied:** Deleted the EKF `Node(...)` block (and the unused `ekf.yaml` load) from `navigation.launch.py`, keeping it purely Nav2 as its name says; the ladder's `03_ekf` rung is the canonical EKF owner. Safe because every include of `navigation.launch.py` repo-wide (rung 06, rung 14 → 06, `jetson.launch.py` → 06) reaches it via `05_amcl` → `03_ekf`. A module docstring now warns standalone users to bring their own EKF (e.g. `ros2 launch billiebot_bringup 03_ekf.launch.py`).
+- **Verify closure (executed 2026-07-17, mock stack in the `billiebot-dev` Docker container):** `ros2 launch billiebot_bringup 06_nav2.launch.py mock:=true` → `ros2 node list | grep -c ekf_filter_node` → **1**; `/odometry/filtered` present (`verify_rung_03.sh` passes) and `verify_rung_06.sh` passes (navigate_to_pose action + both costmaps up).
+- **Risks/notes:** Standalone `navigation.launch.py` users must now bring their own EKF — documented in the launch file docstring.
 
 #### GAP-4 — Nav2 uses raw `/odom` instead of `/odometry/filtered`
 

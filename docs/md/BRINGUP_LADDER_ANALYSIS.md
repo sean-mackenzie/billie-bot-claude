@@ -42,7 +42,7 @@ Rungs compose **transitively** — launching rung N brings up (most of) the rung
                  │            │            │        │              └─► base.launch.py (base_bridge)
                  │            │            │        └─► ekf_node (robot_localization)
                  │            │            └─► localization.launch.py (map_server + amcl + lifecycle_mgr)
-                 │            └─► navigation.launch.py (ekf_node AGAIN + controller + planner
+                 │            └─► navigation.launch.py (controller + planner
                  │                                       + behaviors + bt_navigator + lifecycle_mgr)
                  ├─► 07_oakd            (oakd_dog_detector)
                  ├─► 08_dog_locator     (dog_locator)
@@ -61,7 +61,7 @@ Rungs compose **transitively** — launching rung N brings up (most of) the rung
                                                              mapping and localization are alternatives]
 ```
 
-Note the two standing duplications visible in this graph: (a) in mock mode, `01_lidar` launches a **second `base_bridge` instance** (named `mock_lidar_stub`), and rungs 04/05/06/14 include both `01` and the `03→02` chain; (b) rung 06 starts a **second `ekf_filter_node`** because both `03_ekf` and `navigation.launch.py` launch one. See Appendix B.
+Note the standing duplication visible in this graph: in mock mode, `01_lidar` launches a **second `base_bridge` instance** (named `mock_lidar_stub`), and rungs 04/05/06/14 include both `01` and the `03→02` chain. (A second duplication — rung 06 starting two `ekf_filter_node`s via `navigation.launch.py` — was resolved 2026-07-17, GAP-6.) See Appendix B.
 
 ### 1.3 Per-rung template
 
@@ -175,7 +175,7 @@ From `base_driver.yaml` (calibration status per `docs/MEASURE_ME.md`):
 | `pid_rate_hz` | 30.0 | Must match Arduino PID loop rate; used in the counts-per-loop conversion |
 | `cmd_timeout_sec` | 0.5 | Software deadman: zero motor command if no `/cmd_vel` for 0.5 s (complements the Arduino 500 ms heartbeat cutoff) |
 | `publish_rate_hz` | 30.0 | Rate of the odom/joint/TF pipeline |
-| `publish_tf` | `true` | base_bridge broadcasts `odom → base_link`. **Config comment: "disable when EKF provides odom→base_link" — no rung ever disables it** (Appendix B-3) |
+| `publish_tf` | `false` | EKF owns `odom → base_link` from rung 03 up (GAP-5 resolved 2026-07-17); rung-02-only bench work can restore the base broadcast with the `publish_tf:=true` launch arg (Appendix B-3) |
 | `use_imu` | `false` | BNO055 disabled until the A4/A5 encoder rewire (`docs/MEASURE_ME.md`) |
 | `battery_divider_ratio` / `battery_pin` | 6.0 / A0 | ADC→voltage: `V = adc·5/1023·6.0` |
 | `battery_low_voltage` / `battery_critical_voltage` | 10.5 V / 9.9 V | 3.5 and 3.3 V/cell thresholds (SYS-PLT-2 boundary values) |
@@ -271,7 +271,7 @@ From `ekf.yaml`:
 |---|---|---|
 | `frequency` | 30.0 | Filter output rate, matched to base_bridge's 30 Hz input |
 | `two_d_mode` | `true` | Planar robot: z/roll/pitch forced to zero |
-| `publish_tf` | `true` | EKF broadcasts `odom → base_link` — **conflicts with base_bridge's identical broadcast** (Appendix B-3) |
+| `publish_tf` | `true` | EKF broadcasts `odom → base_link` — sole owner since GAP-5 resolution (base_bridge default is now `false`; Appendix B-3) |
 | `odom_frame`/`base_link_frame`/`world_frame` | `odom`/`base_link`/`odom` | Odom-frame filter (map frame left to SLAM/AMCL) |
 | `odom0` | `/odom` | Sole active sensor input |
 | `odom0_config` | fuses x, y, yaw, vx, vy, vyaw | Absolute pose + planar velocities from wheel odometry |
@@ -292,7 +292,7 @@ Everything from rung 02, plus:
 
 **Data flow:** `base_bridge /odom → ekf_filter_node → /odometry/filtered`. Design §5.2 intends Nav2 to consume `/odometry/filtered`; note that `nav2_params.yaml` actually points `bt_navigator.odom_topic` at raw `/odom` (Appendix B-8).
 
-**TF conflict:** with `publish_tf: true` in *both* `base_driver.yaml` and `ekf.yaml`, two broadcasters fight over `odom → base_link` at 30 Hz each. Because both derive from the same wheel odometry they agree closely in mock mode (masking the defect), but on hardware the EKF-smoothed pose will diverge from raw integration and TF consumers will see time-interleaved jumps between the two sources.
+**TF ownership (GAP-5 resolved 2026-07-17):** the EKF is the sole `odom → base_link` broadcaster from this rung up — `base_driver.yaml` now defaults `publish_tf: false`, and base_bridge only re-enables it via the explicit `publish_tf:=true` launch arg for rung-02-only bench work. (Historically both broadcast at 30 Hz; mock agreement masked the defect, while on hardware the EKF-smoothed pose would diverge from raw integration and TF consumers would see time-interleaved jumps.)
 
 ### 4.4 Measurable outputs
 
@@ -473,9 +473,8 @@ ros2 launch billiebot_bringup 06_nav2.launch.py mock:=true map:=/path/to/map.yam
 | File | Role |
 |---|---|
 | `billiebot_bringup/launch/06_nav2.launch.py` | Rung entry; includes `05_amcl` (full chain) + `navigation.launch.py` |
-| `billiebot_navigation/launch/navigation.launch.py` | **A second `ekf_node`** + `controller_server` + `planner_server` + `behavior_server` + `bt_navigator` + `lifecycle_manager_navigation` |
+| `billiebot_navigation/launch/navigation.launch.py` | `controller_server` + `planner_server` + `behavior_server` + `bt_navigator` + `lifecycle_manager_navigation` (Nav2 only — its former second `ekf_node` was removed, GAP-6 resolved 2026-07-17) |
 | `billiebot_navigation/config/nav2_params.yaml` | All Nav2 servers + both costmaps |
-| `billiebot_navigation/config/ekf.yaml` | Loaded **again** by navigation.launch.py |
 | `billiebot_bringup/scripts/verify_rung_06.sh` | Verification script |
 | All rung 01/02/03/05 files | Transitive |
 | External: `nav2_controller`, `nav2_planner`, `nav2_behaviors`, `nav2_bt_navigator`, `nav2_lifecycle_manager`, `dwb_core`, `nav2_navfn_planner`, `nav2_costmap_2d` *(external)* | |
@@ -1162,9 +1161,9 @@ Findings from this decomposition, ordered by systems impact. "Latent" = predicte
 | # | Finding | Evidence | Impact | Suggested disposition |
 |---|---|---|---|---|
 | B-1 | **Mock lidar publishes no `/scan`.** Rung 01's mock branch launches `base_bridge` as `mock_lidar_stub`; the launch file's own comment calls it a placeholder | `01_lidar.launch.py` (mock Node block); `base_bridge.py` has no LaserScan publisher | Rung 01's verify criterion unfalsifiable in mock; rungs 04/05/06/14 mock have no SLAM/costmap data; `verify_rung_01.sh` fails by construction | Write a ~30-line mock scan publisher (synthetic rectangular room) — unblocks the whole mock nav chain |
-| B-2 | **Duplicate base_bridge in mock composition.** Rungs 04/05/06/14 include both `01_lidar` (mock ⇒ stub base_bridge) and `03→02` (real base_bridge): two publishers on `/odom`, `/joint_states`, `/battery_state`, two `/e_stop` servers, two `odom→base_link` broadcasters | Launch inclusion graph §1.2 | Interleaved odometry from two integrators; nondeterministic e-stop behavior; TF flapping | Falls out automatically if B-1 is fixed |
-| B-3 | **`odom→base_link` TF multi-broadcast.** `base_driver.yaml` `publish_tf: true` (comment: "disable when EKF is active") *and* `ekf.yaml` `publish_tf: true`; no rung overrides either | Both config files; `03_ekf.launch.py` passes no override | On hardware, raw vs. filtered pose diverge → TF consumers (costmaps, AMCL motion model) see jumps | Rungs 03+ should pass `publish_tf:=false` to base |
-| B-4 | **Second `ekf_filter_node` in rung 06.** `06_nav2` includes `05→03` (EKF #1) and `navigation.launch.py` (EKF #2, same node name, same config) | `03_ekf.launch.py`; `navigation.launch.py` EKF block | Duplicate node name; two `/odometry/filtered` publishers; yet more `odom→base_link` contention | Remove the EKF from `navigation.launch.py` (rung 06 always rides on 05) |
+| B-2 | **Duplicate base_bridge in mock composition.** Rungs 04/05/06/14 include both `01_lidar` (mock ⇒ stub base_bridge) and `03→02` (real base_bridge): two publishers on `/odom`, `/joint_states`, `/battery_state`, two `/e_stop` servers (TF flapping no longer occurs since B-3's fix — neither instance broadcasts `odom→base_link` by default) | Launch inclusion graph §1.2 | Interleaved odometry from two integrators; nondeterministic e-stop behavior | Falls out automatically if B-1 is fixed |
+| B-3 | **Resolved 2026-07-17 (GAP-5).** ~~`odom→base_link` TF multi-broadcast~~ — `base_driver.yaml` now defaults `publish_tf: false` (EKF sole owner); `publish_tf:=true` launch arg restores the base broadcast for rung-02-only bench work | Both config files; `base.launch.py` / `02_base.launch.py` | (historical) raw vs. filtered pose divergence → TF consumers see jumps | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-5 |
+| B-4 | **Resolved 2026-07-17 (GAP-6).** ~~Second `ekf_filter_node` in rung 06~~ — the EKF block was removed from `navigation.launch.py`; rung 03's `ekf_filter_node` is the single instance | `navigation.launch.py` | (historical) duplicate node name; two `/odometry/filtered` publishers; `odom→base_link` contention | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-6 |
 | B-5 | **Mission logic is a shell.** `mission_controller` never sends Nav2 goals, never advances `_current_wp_idx`, never increments `_nav_failure_count`, never sets `_estopped` from `/e_stop`, and only logs DoA. The compiled BT (`billiebot_main.xml` + PolicyDecision/BatteryGuard/EStopGuard) — which *does* encode patrol/policy/safety — is loaded by no process | `mission_controller.py` `tick()`; `mission.launch.py` (no BT executor) | SYS-NAV-4/6, SYS-FND-1/2, SYS-EXT-2 unverifiable end-to-end; TC-16/TC-19 blocked | Decide: finish the Python controller (load `patrol_waypoints.yaml`, drive Nav2) or stand up the BT executor the design intended |
 | B-6 | **Empty `map` default silently disables localization.** `map:=''` → `map_server` lifecycle configure fails; lifecycle manager can't activate; rungs 05/06/14 come up "green-ish" with no map frame | `05_amcl.launch.py` default; `localization.launch.py` | Confusing partial bringup; downstream TF-dependent nodes just stay silent | Fail loudly (launch-time assertion) or document a bundled test map |
 | B-7 | **SYS-NAV-4/5 parameter drift.** Progress checker = 0.5 m/10 s vs. spec ">5 s"; near-dog 0.15 m/s speed zone absent (no speed-filter/keepout layer) | `nav2_params.yaml` | Spec-to-config mismatch discoverable only in test | Tune `movement_time_allowance`; add Nav2 speed-filter mask fed by `/dog/pose_map` |

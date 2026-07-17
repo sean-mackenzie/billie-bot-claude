@@ -155,7 +155,9 @@ class BaseBridge(Node):
         self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
         self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
         self.battery_pub = self.create_publisher(BatteryState, '/battery_state', 10)
-        self.tf_broadcaster = TransformBroadcaster(self)
+        # Only register a /tf publisher when this node owns odom->base_link
+        # (GAP-5: the EKF owns it from rung 03 up; see base_driver.yaml)
+        self.tf_broadcaster = TransformBroadcaster(self) if self._publish_tf else None
 
         # E-stop service
         self._estopped = False
