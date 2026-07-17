@@ -24,8 +24,10 @@ base_bridge:
 
     reset_encoders_on_start: true
 
-    # TF publishing — disable when EKF provides odom->base_link
-    publish_tf: true
+    # TF publishing — the EKF owns odom->base_link from rung 03 up (GAP-5).
+    # For rung-02-only bench work (no EKF), override at launch:
+    #   ros2 launch billiebot_bringup 02_base.launch.py publish_tf:=true
+    publish_tf: false
 
     # IMU — disabled until A4/A5 rewire (see docs/MEASURE_ME.md)
     use_imu: false

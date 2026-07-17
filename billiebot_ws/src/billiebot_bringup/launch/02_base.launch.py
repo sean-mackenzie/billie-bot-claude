@@ -10,6 +10,7 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     mock = LaunchConfiguration('mock')
+    publish_tf = LaunchConfiguration('publish_tf')
 
     base_launch = os.path.join(
         get_package_share_directory('billiebot_base'), 'launch', 'base.launch.py'
@@ -20,6 +21,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('mock', default_value='false'),
+        # odom->base_link is owned by the EKF from rung 03 up (GAP-5);
+        # set true only for rung-02-only bench work with no EKF running.
+        DeclareLaunchArgument('publish_tf', default_value='false'),
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(desc_launch),
@@ -27,6 +31,6 @@ def generate_launch_description():
 
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(base_launch),
-            launch_arguments={'mock': mock}.items(),
+            launch_arguments={'mock': mock, 'publish_tf': publish_tf}.items(),
         ),
     ])
