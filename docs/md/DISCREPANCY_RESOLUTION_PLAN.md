@@ -23,7 +23,7 @@
 | GAP-14 | Firmware watchdog still 2000 ms (design: 500 ms) | 🔴 | F | A | S | MOB-05, SYS-PLT-5 | Resolved (2026-07-11) |
 | GAP-5 | `odom→base_link` TF broadcast by both base_bridge and EKF | 🟠 | P | A | S | NAV-07, SYS-NAV-2 | Resolved (2026-07-17) |
 | GAP-6 | Second `ekf_filter_node` launched by rung 06 | 🟠 | F | A | S | NAV-07 | Resolved (2026-07-17) |
-| GAP-4 | Nav2 consumes raw `/odom`; `/odometry/filtered` unused | 🟡 | P | A | S | NAV-08 | Open |
+| GAP-4 | Nav2 consumes raw `/odom`; `/odometry/filtered` unused | 🟡 | P | A | S | NAV-08 | Resolved (2026-07-17) |
 | GAP-8 | Mission never learns of e-stop (`_estopped` never set) | 🟠 | F | A | S | MSN-02 | Open |
 | GAP-7 | Mission never dispatches Nav2 goals; failure counter dead | 🟠 | F | B | L | MSN-05, NAV-14, SYS-NAV-4/6, SYS-FND-1 | Open |
 | GAP-10 | No patrol-waypoint executor; `patrol_waypoints.yaml` unloaded | 🟠 | F | B | M | MSN-06, MSN-14, SYS-NAV-6 | Open |
@@ -46,7 +46,7 @@
 
 ### Phase A — Safety & correctness floor (before any hardware driving)
 
-**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-8.** These five are all S-effort and remove the two classes of danger: motors that keep spinning after a control-path loss (GAP-14 — **resolved**, firmware watchdog now fires at 500 ms), and a TF/odometry stack that lies to the navigator (GAP-5/6 — **resolved 2026-07-17**, landed together: the EKF is now the sole `odom→base_link` owner and rung 06 starts exactly one `ekf_filter_node`; GAP-4 remains). GAP-8 completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
+**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-8.** These five are all S-effort and remove the two classes of danger: motors that keep spinning after a control-path loss (GAP-14 — **resolved**, firmware watchdog now fires at 500 ms), and a TF/odometry stack that lies to the navigator (GAP-5/6 — **resolved 2026-07-17**, landed together: the EKF is now the sole `odom→base_link` owner and rung 06 starts exactly one `ekf_filter_node`; GAP-4 — **resolved 2026-07-17**, both Nav2 odometry consumers now read `/odometry/filtered`). GAP-8 — the only Phase A gap still open — completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
 
 ### Phase B — Close the autonomy loop (the MVP's core promise)
 
@@ -108,13 +108,13 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
 
 #### GAP-4 — Nav2 uses raw `/odom` instead of `/odometry/filtered`
 
-**Status:** Open · **Severity:** 🟡 Minor-hygiene (Major once IMU lands) · **Disposition:** P · **Effort:** S
+**Status:** Resolved (2026-07-17, PR `fix/gap-4-nav2-filtered-odom`) · **Severity:** 🟡 Minor-hygiene (Major once IMU lands) · **Disposition:** P · **Effort:** S
 
-- **What/Where:** `…/src/billiebot_navigation/config/nav2_params.yaml:8` — `bt_navigator: odom_topic: /odom`. The EKF publishes `/odometry/filtered` (ekf.yaml input `odom0: /odom`), which nothing consumes.
-- **Why it matters:** NAV-08; design §5.2 wires Nav2 to the filtered estimate. With only wheel odometry fused, the two topics are nearly identical, so this is currently cosmetic — but the moment the BNO055 is enabled (GAP-2) Nav2 would be navigating on the *worse* estimate.
-- **Recommended fix:** Change `nav2_params.yaml:8` to `odom_topic: /odometry/filtered`. Audit for other raw-`/odom` consumers in Nav2 config while there (the DWB critics use TF, not the topic, so this one line is expected to be the only change).
-- **Verify closure:** Rung 06 up: `ros2 param get /bt_navigator odom_topic` → `/odometry/filtered`; send a `navigate_to_pose` goal and confirm normal driving.
-- **Risks/notes:** None while EKF and raw odom agree. Do after GAP-6 so only one filtered publisher exists.
+- **What/Where:** `…/src/billiebot_navigation/config/nav2_params.yaml:8` — `bt_navigator: odom_topic: /odom`. The EKF publishes `/odometry/filtered` (ekf.yaml input `odom0: /odom`), which nothing consumed.
+- **Why it matters:** NAV-08; design §5.2 wires Nav2 to the filtered estimate. With only wheel odometry fused, the two topics are nearly identical, so this was cosmetic — but the moment the BNO055 is enabled (GAP-2) Nav2 would have been navigating on the *worse* estimate.
+- **Fix applied:** `nav2_params.yaml` — `bt_navigator.odom_topic: /odometry/filtered`. The sheet's audit for other raw-`/odom` consumers found one more at *runtime* that a config grep can't see: `controller_server` subscribes to odometry via its own `odom_topic` parameter (used by its odom smoother/progress checking), which was silently defaulting to raw `odom`. Set `controller_server.ros__parameters.odom_topic: /odometry/filtered` as well — NAV-08 says Nav2 *consumers*, plural. `ekf.yaml`'s `odom0: /odom` is the EKF's input and correctly stays raw; the DWB critics use TF, not the topic.
+- **Verify closure (executed 2026-07-17, mock stack in the `billiebot-dev` Docker container):** `ros2 launch billiebot_bringup 06_nav2.launch.py mock:=true` → `ros2 param get /bt_navigator odom_topic` → **`/odometry/filtered`**; `ros2 param get /controller_server odom_topic` → **`/odometry/filtered`**. `ros2 topic info /odometry/filtered --verbose` shows subscribers `bt_navigator` + `controller_server`; `/odom`'s only subscriber is `ekf_filter_node`. `verify_rung_03.sh` and `verify_rung_06.sh` both pass (3/3: navigate_to_pose action + both costmaps). Full driving check (`navigate_to_pose` goal, normal driving) deferred to hardware — mock rung 06 proves process/action liveness only (see BRINGUP §7.3 mock ceiling).
+- **Risks/notes:** None while EKF and raw odom agree (only wheel odom fused today). Done after GAP-6 as required, so exactly one filtered publisher exists.
 
 #### GAP-8 — Mission never learns of e-stop
 
@@ -272,7 +272,7 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
 
 - **What/Where:** The BNO055 needs the Nano's I²C pins A4/A5, which the right encoder currently occupies (`docs/MEASURE_ME.md` §IMU Hardware Rewire). Consequently: `base_driver.yaml:31` `use_imu: false`; `ekf.yaml:26-36` — the entire `imu0` block commented out; `base_bridge` publishes no `/imu/data`.
 - **Why it matters:** NAV-06 — with a single input the EKF is a smoother, not a fusion; yaw drift over long patrols degrades AMCL convergence and room attribution.
-- **Recommended fix (ordered):** (1) Rewire right encoder A4/A5 → D4/D7 per MEASURE_ME; (2) update firmware pin-change interrupt config (PORTD) and add the `'i'` IMU read command per `firmware/README.md`; (3) extend `base_bridge` to poll `'i'` and publish `sensor_msgs/Imu` on `/imu/data`; (4) set `use_imu: true` (base_driver.yaml:31); (5) uncomment `imu0` in `ekf.yaml`; (6) confirm GAP-4 is closed so Nav2 actually benefits.
+- **Recommended fix (ordered):** (1) Rewire right encoder A4/A5 → D4/D7 per MEASURE_ME; (2) update firmware pin-change interrupt config (PORTD) and add the `'i'` IMU read command per `firmware/README.md`; (3) extend `base_bridge` to poll `'i'` and publish `sensor_msgs/Imu` on `/imu/data`; (4) set `use_imu: true` (base_driver.yaml:31); (5) uncomment `imu0` in `ekf.yaml`; (6) GAP-4 is closed (resolved 2026-07-17), so Nav2 benefits immediately.
 - **Verify closure:** `ros2 topic hz /imu/data` ≈ expected rate; rotate robot 360° by teleop → `/odometry/filtered` yaw returns to start within a few degrees while raw `/odom` shows drift.
 - **Risks/notes:** Pure-hardware first step; schedule with the encoder-calibration bench session (MEASURE_ME). Until then this gap is *accepted*, not forgotten.
 

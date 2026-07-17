@@ -218,7 +218,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 | NAV-05 | The localization subsystem shall estimate map-frame pose with AMCL (500–2000 particles, likelihood-field model, differential motion model) and broadcast the `map→odom` transform; mean position error ≤ 0.15 m against surveyed ground truth. | SYS-NAV-2 | T | ACT-08 a7–a9; IBD-04 | ⬜ | `config/amcl_params.yaml`; quantitative test pending HW |
 | NAV-06 | The state-estimation subsystem shall fuse wheel odometry (and IMU when enabled) in a 30 Hz planar EKF publishing `/odometry/filtered`. | SYS-NAV-2 | T | ACT-06 a11; IBD-03 blk ekf **[GAP-2]** | 🟡 | `config/ekf.yaml`; `imu0` block commented out pending A4/A5 rewire |
 | NAV-07 | Exactly one component shall broadcast the `odom→base_link` transform at any time. | SYS-NAV-2 (derived, new) | T | IBD-04 note | ✅ | EKF sole broadcaster: `base_driver.yaml` `publish_tf` default `false` (rung-02 bench override via launch arg) and rung 06 starts a single `ekf_filter_node`; GAP-5/GAP-6 resolved 2026-07-17 |
-| NAV-08 | Nav2 consumers shall use the filtered odometry (`/odometry/filtered`), not raw `/odom`. | SYS-NAV-2 (derived, new) | I | IBD-03 c6 **[GAP-4]** | ❌ | `nav2_params.yaml` `bt_navigator.odom_topic: /odom` |
+| NAV-08 | Nav2 consumers shall use the filtered odometry (`/odometry/filtered`), not raw `/odom`. | SYS-NAV-2 (derived, new) | I | IBD-03 c6 | ✅ | `nav2_params.yaml` sets `odom_topic: /odometry/filtered` for both `bt_navigator` and `controller_server` (the latter had been defaulting to raw odom); GAP-4 resolved 2026-07-17 |
 | NAV-09 | The navigation subsystem shall plan global collision-free paths (NavFn, 0.5 m tolerance) and execute them with a 20 Hz local controller (DWB) using layered costmaps (static + obstacle + inflation) fed by `/scan`. | SYS-NAV-3 | D | ACT-01 a6; IBD-03 blk nav2; TC-16 | ✅ | `config/nav2_params.yaml` |
 | NAV-10 | The local costmap shall mark and clear dynamic obstacles from `/scan` within 2.5 m so paths replan around moving obstacles including the dog. | SYS-NAV-3 | D | ACT-01 a6 note; TC-16 | ✅ | `nav2_params.yaml` obstacle layer |
 | NAV-11 | Commanded speed shall never exceed 0.3 m/s in normal transit (`max_vel_x`, `max_speed_xy`). | SYS-NAV-5 | T | ACT-06 constraint; TC-18 | ✅ | `nav2_params.yaml` DWB limits |
@@ -546,11 +546,11 @@ The authoritative as-intended ROS graph. Parts are `«rosNode»` blocks allocate
 | # | Topic «rosTopic» | Type (item flow) | Publisher → Subscriber(s) | Rate | Notes |
 |---|---|---|---|---|---|
 | c1 | `/cmd_vel` | `geometry_msgs/Twist` | controller_server, teleop, retreat_server → **base_bridge** | 20 Hz (nav) | single motion sink |
-| c2 | `/odom` | `nav_msgs/Odometry` | **base_bridge** → ekf_filter_node, bt_navigator | 30 Hz | bt_navigator should move to c6 **[GAP-4]** |
+| c2 | `/odom` | `nav_msgs/Odometry` | **base_bridge** → ekf_filter_node | 30 Hz | sole consumer is the EKF since GAP-4 resolution (2026-07-17) |
 | c3 | `/joint_states` | `sensor_msgs/JointState` | **base_bridge** → robot_state_publisher | 30 Hz | wheel TF |
 | c4 | `/battery_state` | `sensor_msgs/BatteryState` | **base_bridge** → **mission_controller** | 1 Hz | SAFE-mode input |
 | c5 | `/scan` | `sensor_msgs/LaserScan` | rplidar_node → slam_toolbox ∥ amcl, both costmaps | ~5.5–8 Hz | no mock source **[GAP-16]** |
-| c6 | `/odometry/filtered` | `nav_msgs/Odometry` | ekf_filter_node → *(intended: Nav2)* | 30 Hz | currently unconsumed **[GAP-4]** |
+| c6 | `/odometry/filtered` | `nav_msgs/Odometry` | ekf_filter_node → bt_navigator, controller_server | 30 Hz | Nav2's odometry source since GAP-4 resolution (2026-07-17) |
 | c7 | `/dog/detections_3d` | `DogDetection3D` | **oakd_dog_detector** → **dog_locator**, **state_fusion** | 5 Hz | |
 | c8 | `/dog/pose_map` | `geometry_msgs/PoseStamped` | **dog_locator** → **state_fusion**, **approach_dog_server** | ≤ 5 Hz | map-frame dog pose |
 | c9 | `/thermal/image` | `sensor_msgs/Image` 32FC1 | **thermal_node** → (viewer) | 4 Hz | |
@@ -609,8 +609,7 @@ flowchart LR
     RPL -- "c5 /scan" --> LOC
     RPL -- "c5 /scan" --> NAV2
     BB -- "c2 /odom" --> EKF
-    BB -- "c2 /odom" --> NAV2
-    EKF -. "c6 /odometry/filtered GAP-4 unconsumed" .-> NAV2
+    EKF -- "c6 /odometry/filtered" --> NAV2
     BB -- "c4 /battery_state" --> MC
     NAV2 -- "c1 /cmd_vel" --> BB
     BB <-- "IBD-01 c5 serial 57600" --> MCUX
@@ -1098,7 +1097,7 @@ Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code 
 | GAP-1 | Mission logic is a Python state machine; BT XML + `PolicyDecision`/guard C++ nodes are compiled but never executed; most BT leaf nodes referenced in `billiebot_main.xml` are undefined | SYS-EXT-2, MSN-01, MSN-12, EXT-02 | F (either run the BT or port `PolicyDecision` into the controller) |
 | GAP-2 | `/imu/data` never published; EKF `imu0` commented out; BNO055 blocked by A4/A5 encoder pin conflict | NAV-06 | H (rewire per MEASURE_ME) then P |
 | GAP-3 | `BatteryStatus.msg` defined, published by nothing (`sensor_msgs/BatteryState` used instead) | IFC-06 | M (delete) or F (adopt) |
-| GAP-4 | `bt_navigator.odom_topic` = raw `/odom`; `/odometry/filtered` unconsumed | NAV-08 | P |
+| GAP-4 | Nav2 rewired to `/odometry/filtered`: `odom_topic` set for `bt_navigator` **and** `controller_server` (runtime audit found the latter defaulting to raw odom) — **Resolved 2026-07-17** | NAV-08 | P (done) |
 | GAP-5 | `odom→base_link` dual broadcast fixed: `base_driver.yaml` `publish_tf` default `false`, EKF sole owner, `publish_tf` launch arg for rung-02 bench work — **Resolved 2026-07-17** | NAV-07 | P (done) |
 | GAP-6 | Second `ekf_filter_node` removed from `navigation.launch.py`; rung 03's EKF is the single instance — **Resolved 2026-07-17** | NAV-07 | F (done) |
 | GAP-7 | Mission never sends Nav2 goals; `_nav_failure_count` never incremented — patrol dispatch and SAFE escalation dormant | MSN-05, NAV-14, SYS-NAV-4/6, SYS-FND-1 | F (largest functional gap) |

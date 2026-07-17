@@ -290,7 +290,7 @@ Everything from rung 02, plus:
 | | `/set_pose` | sub | `PoseWithCovarianceStamped` | manual filter reset *(robot_localization standard interface — inference)* |
 | | `/diagnostics` | pub | `diagnostic_msgs/DiagnosticArray` | periodic *(standard — inference)* |
 
-**Data flow:** `base_bridge /odom → ekf_filter_node → /odometry/filtered`. Design §5.2 intends Nav2 to consume `/odometry/filtered`; note that `nav2_params.yaml` actually points `bt_navigator.odom_topic` at raw `/odom` (Appendix B-8).
+**Data flow:** `base_bridge /odom → ekf_filter_node → /odometry/filtered`. Nav2 consumes `/odometry/filtered` as design §5.2 intends — `nav2_params.yaml` sets `odom_topic: /odometry/filtered` for both `bt_navigator` and `controller_server` (B-8 resolved 2026-07-17, GAP-4).
 
 **TF ownership (GAP-5 resolved 2026-07-17):** the EKF is the sole `odom → base_link` broadcaster from this rung up — `base_driver.yaml` now defaults `publish_tf: false`, and base_bridge only re-enables it via the explicit `publish_tf:=true` launch arg for rung-02-only bench work. (Historically both broadcast at 30 Hz; mock agreement masked the defect, while on hardware the EKF-smoothed pose would diverge from raw integration and TF consumers would see time-interleaved jumps.)
 
@@ -494,7 +494,7 @@ From `nav2_params.yaml`:
 | planner | `GridBased` | `NavfnPlanner`, `tolerance 0.5`, `allow_unknown: true` | Global planner |
 | behaviors | `behavior_plugins` | `["spin", "backup", "wait"]` @ `cycle_frequency` 10 Hz | The SYS-NAV-4 recovery primitives (launch file comments this explicitly) |
 | bt_navigator | `navigators` | `navigate_to_pose`, `navigate_through_poses` | The action surface consumed by rung 13 and TC-16 |
-| bt_navigator | `odom_topic` | `/odom` | **Raw odometry, not `/odometry/filtered`** — deviates from design §5.2 (Appendix B-8) |
+| bt_navigator, controller_server | `odom_topic` | `/odometry/filtered` | EKF-filtered odometry per design §5.2 (B-8 resolved 2026-07-17, GAP-4; controller_server's param had been silently defaulting to raw odom) |
 | local costmap | rolling 3×3 m @ `update` 5 Hz / `publish` 2 Hz, `robot_radius` 0.18 m, inflation 0.55 m | Obstacle layer from `/scan` (marking+clearing, 2.5 m obstacle range) |
 | global costmap | full map @ 1 Hz, static + obstacle + inflation layers | Same `/scan` source |
 
@@ -512,7 +512,7 @@ Everything from rung 05, plus six nodes. The action/topic surface:
 | `behavior_server` | `spin`, `backup`, `wait` | action servers | `nav2_msgs` actions — recovery primitives | 10 Hz cycle |
 | `bt_navigator` | `navigate_to_pose` | **action server** | `nav2_msgs/action/NavigateToPose` — the system's primary mobility API (used by `mission_controller`, `approach_dog_server`, TC-16) | |
 | | `navigate_through_poses` | action server | multi-waypoint variant → SYS-NAV-6 | |
-| `ekf_filter_node` (**2nd instance**) | as rung 03 | | **Duplicate node name and duplicate `/odometry/filtered` + TF publisher** (Appendix B-4) | 30 Hz |
+| `ekf_filter_node` | single instance, from rung 03 | | the former duplicate launched by `navigation.launch.py` was removed 2026-07-17 (Appendix B-4, GAP-6) | 30 Hz |
 | `lifecycle_manager_navigation` | manages the four Nav2 servers | | autostart | |
 
 **Closed control loop now exists:** `navigate_to_pose` goal → bt_navigator ticks its BT → planner (global costmap/map) → controller DWB (local costmap from `/scan`, odometry) → `/cmd_vel` → `base_bridge` → serial `m` commands → wheels → encoders → `/odom` → EKF/AMCL → TF → costmaps. This is the design's IBD-01 "perception→planning loop on one machine" realized.
@@ -1167,7 +1167,7 @@ Findings from this decomposition, ordered by systems impact. "Latent" = predicte
 | B-5 | **Mission logic is a shell.** `mission_controller` never sends Nav2 goals, never advances `_current_wp_idx`, never increments `_nav_failure_count`, never sets `_estopped` from `/e_stop`, and only logs DoA. The compiled BT (`billiebot_main.xml` + PolicyDecision/BatteryGuard/EStopGuard) — which *does* encode patrol/policy/safety — is loaded by no process | `mission_controller.py` `tick()`; `mission.launch.py` (no BT executor) | SYS-NAV-4/6, SYS-FND-1/2, SYS-EXT-2 unverifiable end-to-end; TC-16/TC-19 blocked | Decide: finish the Python controller (load `patrol_waypoints.yaml`, drive Nav2) or stand up the BT executor the design intended |
 | B-6 | **Empty `map` default silently disables localization.** `map:=''` → `map_server` lifecycle configure fails; lifecycle manager can't activate; rungs 05/06/14 come up "green-ish" with no map frame | `05_amcl.launch.py` default; `localization.launch.py` | Confusing partial bringup; downstream TF-dependent nodes just stay silent | Fail loudly (launch-time assertion) or document a bundled test map |
 | B-7 | **SYS-NAV-4/5 parameter drift.** Progress checker = 0.5 m/10 s vs. spec ">5 s"; near-dog 0.15 m/s speed zone absent (no speed-filter/keepout layer) | `nav2_params.yaml` | Spec-to-config mismatch discoverable only in test | Tune `movement_time_allowance`; add Nav2 speed-filter mask fed by `/dog/pose_map` |
-| B-8 | **bt_navigator uses raw `/odom`**, design §5.2 says Nav2 consumes `/odometry/filtered` | `nav2_params.yaml` `odom_topic: /odom` | EKF value partially bypassed | One-line param change |
+| B-8 | **Resolved 2026-07-17 (GAP-4).** ~~bt_navigator uses raw `/odom`~~ — `odom_topic: /odometry/filtered` set for bt_navigator *and* controller_server (the latter had defaulted to raw odom) | `nav2_params.yaml` | (historical) EKF value partially bypassed | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-4 |
 | B-9 | **Serial-port fragility.** Lidar on raw `/dev/ttyUSB1` while Arduino uses a by-id path — USB enumeration order can swap devices | `01_lidar.launch.py`; `base_driver.yaml` | Boot-order-dependent bringup failures on the Jetson | Use `/dev/serial/by-id/` for the lidar too, or udev rules |
 | B-10 | **`perception.yaml` never loaded by the ladder.** Rungs 07/09/10 pass only `mock`; the yaml is loaded only by `perception.launch.py`, which no rung uses. Defaults currently equal the yaml, so behavior matches — until someone edits the yaml and nothing changes | Rung launch files vs. `perception.launch.py` | Silent config drift trap | Point rungs 07/09/10 at the yaml (as rung 11 already does for audio) |
 | B-11 | **Real-mode perception needs unset parameters and has a bbox bug.** `model_path` defaults `''` in both `oakd_dog_detector` and `audio_classifier` → real mode = error log + zero output. Additionally DepthAI `det.xmin/ymin/xmax/ymax` are normalized floats; `int()` of them zeroes the bbox fields (position/depth unaffected) | `oakd_dog_detector.py` `init_depthai_pipeline`/`real_detect`; `audio_classifier.py` | First hardware run of rungs 07/11 will silently produce nothing; bbox fields useless for downstream motion-energy features (design §5.3 ACTIVE heuristic) | Provide model artifacts + set params in yaml; scale bbox by preview size |
