@@ -15,9 +15,9 @@
     <Discovery>
       <Peers>
         <!-- Jetson Orin Nano IP -->
-        <Peer address="192.168.1.100"/>
+        <Peer address="192.168.42.100"/>
         <!-- Raspberry Pi 5 IP -->
-        <Peer address="192.168.1.101"/>
+        <Peer address="192.168.42.101"/>
       </Peers>
       <ParticipantIndex>auto</ParticipantIndex>
     </Discovery>

@@ -67,12 +67,6 @@ robot should drive forward. Adjust signs if it doesn't.
 Update `billiebot_cognition/config/rooms.yaml` with actual map-frame coordinates
 after mapping the apartment. The current values are placeholders.
 
-## CycloneDDS Network
-
-Update `billiebot_bringup/config/cyclonedds.xml` with actual IP addresses of:
-- Jetson Orin Nano (currently `192.168.1.100`)
-- Raspberry Pi 5 (currently `192.168.1.101`)
-
 ## Patrol Waypoints
 
 Update `billiebot_navigation/config/patrol_waypoints.yaml` with actual map-frame

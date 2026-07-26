@@ -28,7 +28,7 @@ BillieBot is a differential-drive indoor robot whose MVP mission is **observe-an
 | **Raspberry Pi 5** | Sensing & cognition | `thermal_node`, `noir_cam_node`, `audio_classifier`, `speaker_node`, `state_fusion`, `dog_logger`, `daily_report`, `report_server` |
 | **Arduino Nano** | Hard real-time I/O | Encoder counting, PID @30 Hz, L298N PWM, battery ADC, 500 ms serial-heartbeat motor cutoff (`firmware/README.md`) |
 
-Multi-machine DDS uses CycloneDDS with multicast disabled and static unicast peers (`billiebot_bringup/config/cyclonedds.xml`: Jetson `192.168.1.100`, Pi `192.168.1.101`; placeholders per `docs/MEASURE_ME.md`). The `jetson.launch.py` and `pi.launch.py` files set `CYCLONEDDS_URI` to this config and launch the host-appropriate subset of rungs — they are deployment groupings, not rungs themselves.
+Multi-machine DDS uses CycloneDDS with multicast disabled and static unicast peers (`billiebot_bringup/config/cyclonedds.xml`: Jetson `192.168.42.100`, Pi `192.168.42.101`). The `jetson.launch.py` and `pi.launch.py` files set `CYCLONEDDS_URI` to this config and launch the host-appropriate subset of rungs — they are deployment groupings, not rungs themselves.
 
 Every rung (except 08 and 12) accepts a `mock:=true` launch argument that substitutes hardware drivers with synthetic publishers so the entire ladder can be exercised on a development machine.
 
