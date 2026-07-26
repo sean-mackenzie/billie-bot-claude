@@ -425,8 +425,8 @@ The two robot computers discover each other via **static unicast peers** (multic
 
 | Machine | IP in shipped config |
 |---|---|
-| Jetson Orin Nano | `192.168.1.100` |
-| Raspberry Pi | `192.168.1.101` |
+| Jetson Orin Nano | `192.168.42.100` |
+| Raspberry Pi | `192.168.42.101` |
 
 1. In your router, give both boards **DHCP reservations** (either matching the shipped IPs, or your own choices).
 2. If you change the IPs, edit the two `<Peer address="…"/>` lines in the **source** file above and rebuild (`colcon build --symlink-install`) on both machines — the launch files point `CYCLONEDDS_URI` at the *installed* copy of that file.

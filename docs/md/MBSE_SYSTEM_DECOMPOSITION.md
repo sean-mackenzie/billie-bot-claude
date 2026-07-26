@@ -317,7 +317,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 | ID | Requirement (shall) | Trace ⟵ | V | Demonstrated by | Status | Evidence |
 |---|---|---|---|---|---|---|
 | PLT-01 | Software shall deploy across hosts per the allocation matrix (§5.3): autonomy on the Jetson (`jetson.launch.py`), sensing/cognition on the Pi (`pi.launch.py`), real-time I/O on the Arduino. | design §4.1 | I | IBD-03 partitions; ACT-08 a1 | ✅ | `billiebot_bringup/launch/{jetson,pi}.launch.py` |
-| PLT-02 | Inter-host DDS shall run CycloneDDS with multicast disabled and static unicast peers for the Jetson and Pi. | design §5.1 | T | IBD-00 c1; ACT-08 a1 | ✅ | `config/cyclonedds.xml` (IPs are placeholders per MEASURE_ME) |
+| PLT-02 | Inter-host DDS shall run CycloneDDS with multicast disabled and static unicast peers for the Jetson and Pi. | design §5.1 | T | IBD-00 c1; ACT-08 a1 | ✅ | `config/cyclonedds.xml` |
 | PLT-03 | Battery thresholds shall be 10.5 V (3.5 V/cell, LOW → SAFE entry) and 9.9 V (3.3 V/cell, CRITICAL / documented hard cutoff). | SYS-PLT-2 | T | ACT-05 d2; TC-05 | ✅ | `base_driver.yaml`, `mission.yaml` (`battery_safe_voltage`) |
 | PLT-04 | On SAFE entry due to battery, the system shall stop motion, alert the operator, and request pickup. | SYS-PLT-2 | D | ACT-05 a10 **[GAP: alert unimplemented]** | 🟡 | mode transition exists; no alert/notification channel |
 | PLT-05 | The operator teleop surface shall be `/cmd_vel` (Twist) plus `/e_stop`, reachable from the host over Wi-Fi/DDS. | SYS-PLT-4 | D | IBD-00 c2; TC-06 | ✅ | standard tools (`teleop_twist_keyboard`); no bespoke node needed |

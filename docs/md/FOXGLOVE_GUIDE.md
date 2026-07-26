@@ -364,8 +364,8 @@ BillieBot is multi-machine (see INSTALLATION_AND_SETUP.md §2):
 
 | Machine | IP (shipped) | Hardware attached | Rungs launched here |
 |---|---|---|---|
-| Jetson Orin Nano | `192.168.1.100` | RPLidar A1, Arduino/base, OAK-D Lite | 01–08, 13 |
-| Raspberry Pi | `192.168.1.101` | MLX90640, NoIR cam, ReSpeaker, speaker | 09–12 |
+| Jetson Orin Nano | `192.168.42.100` | RPLidar A1, Arduino/base, OAK-D Lite | 01–08, 13 |
+| Raspberry Pi | `192.168.42.101` | MLX90640, NoIR cam, ReSpeaker, speaker | 09–12 |
 | Your Mac | (any, on robot Wi-Fi) | — | Foxglove only |
 
 **Bridge strategy:** run `foxglove_bridge` on the machine whose rung you're testing, and connect Foxglove to that machine:
@@ -375,7 +375,7 @@ jetson$ ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765   # ru
 pi$     ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765   # rungs 09–12
 ```
 
-Foxglove → Open connection → `ws://192.168.1.100:8765` (Jetson) or `ws://192.168.1.101:8765` (Pi). Your Mac needs only WebSocket reachability to that IP over the robot's Wi-Fi (GL-SFT1200 router) — it does **not** need to be a DDS participant. That's the whole point of the bridge.
+Foxglove → Open connection → `ws://192.168.42.100:8765` (Jetson) or `ws://192.168.42.101:8765` (Pi). Your Mac needs only WebSocket reachability to that IP over the robot's Wi-Fi (GL-SFT1200 router) — it does **not** need to be a DDS participant. That's the whole point of the bridge.
 
 Once both machines are up with CycloneDDS peers configured (`billiebot_bringup/config/cyclonedds.xml`, multicast off, static peers; remember `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` on both boards per §2.1), **one bridge on the Jetson sees the Pi's topics too** — from then on, connect only to the Jetson and drive everything from one dashboard.
 
@@ -387,7 +387,7 @@ Drop `mock:=true` from every command below. Where VERIFICATION.md lists a `verif
 jetson$ ros2 launch billiebot_bringup 01_lidar.launch.py
 ```
 
-Same panels as Mock Rung 01 (`ws://192.168.1.100:8765` now). What's different — and what to check:
+Same panels as Mock Rung 01 (`ws://192.168.42.100:8765` now). What's different — and what to check:
 
 1. The rectangle is gone; you see **your actual room**, walls, furniture and all. Rotate to top-down 2D view.
 2. **Rate check** (Topics sidebar): the RPLidar A1 in `Standard` mode spins slower than the 10 Hz mock — expect roughly 5–8 Hz, steady. A sagging or jittery rate usually means USB power or serial contention.
@@ -489,7 +489,7 @@ With real localization + real detections: `/dog/pose_map` is now an arrow at the
 pi$ ros2 launch billiebot_bringup 09_thermal.launch.py
 ```
 
-Bridge on the Pi for rungs 09–12 if the Jetson stack is down (`ws://192.168.1.101:8765`) — or bring both machines up (§2.0) and keep using the Jetson bridge.
+Bridge on the Pi for rungs 09–12 if the Jetson stack is down (`ws://192.168.42.101:8765`) — or bring both machines up (§2.0) and keep using the Jetson bridge.
 
 1. Same Image panel (Turbo, 20–40 °C). Wave your hand in front of the MLX90640: a ~33–36 °C blob tracks your hand at 4 Hz across the 32×24 grid.
 2. Tune the colormap range to your room: min = ambient − 2 °C, max ≈ 40 °C gives the best contrast for mammal-hunting.
@@ -525,7 +525,7 @@ For real fused state you want the Jetson perception rungs (07/08) up too — thi
 
 1. The §1.7 Raw Messages panel on `/billie/state`, now with a real dog in it: position in map coordinates, `room` naming the actual room (per `rooms.yaml`), states driven by real detections and barks.
 2. State Transitions on `/billie/state.state` over a 10-minute observation of the dog is the single best "is this robot working" artifact the project produces. Screenshot it.
-3. Daily report: `http://192.168.1.101:8080/` in your browser.
+3. Daily report: `http://192.168.42.101:8080/` in your browser.
 
 ### Real Rung 13: Mission (Jetson)
 
@@ -545,7 +545,7 @@ pi$     ros2 launch billiebot_bringup pi.launch.py
 jetson$ ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
 ```
 
-Connect to `ws://192.168.1.100:8765`, load the **`BillieBot Robot`** layout — every panel you built now shows the live robot. This layout *is* the operator console from the system design (Host Computer → Foxglove via router). Leave it running during a patrol and watch the day's story: map position, dog state bands, stress plot, thermal blobs, mission mode.
+Connect to `ws://192.168.42.100:8765`, load the **`BillieBot Robot`** layout — every panel you built now shows the live robot. This layout *is* the operator console from the system design (Host Computer → Foxglove via router). Leave it running during a patrol and watch the day's story: map position, dog state bands, stress plot, thermal blobs, mission mode.
 
 ---
 
