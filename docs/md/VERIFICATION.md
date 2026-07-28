@@ -12,6 +12,13 @@ source install/setup.bash
 
 Each rung builds on the previous. Use `mock:=true` for hardware-free testing.
 
+**Rungs 05, 06, 14 and `jetson.launch.py` need a map** — they start `map_server` + AMCL, and `mock:=true` does not change that. The `map` argument defaults to empty and fails quietly if you omit it; see [INSTALLATION_AND_SETUP.md §1.6 "Why Nav2 needs a map"](INSTALLATION_AND_SETUP.md#nav2-needs-a-map). Set it once per shell and reuse it below:
+
+```bash
+export MAP="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
+test -f "$MAP" && echo "[PASS] map YAML exists" || echo "[FAIL] map YAML missing"
+```
+
 **On hardware (skip for `mock:=true`):** run the device preflight first — `ros2 run billiebot_bringup check_devices.sh` should report `[PASS]` for the RPLidar, the Arduino, `dialout` membership, and the OAK-D. Jetson device setup is in `INSTALLATION_AND_SETUP.md` §2.2.4.
 
 ### Rung 01: Lidar
@@ -85,17 +92,20 @@ ros2 launch billiebot_bringup 04_slam.launch.py mock:=true
 
 ### Rung 05: AMCL Localization
 ```bash
-ros2 launch billiebot_bringup 05_amcl.launch.py map:=/path/to/map.yaml
+ros2 launch billiebot_bringup 05_amcl.launch.py mock:=true map:="$MAP"
 ```
-**Verify:** AMCL particle cloud on `/particle_cloud`, map→odom TF
+**Verify:** AMCL particle cloud on `/particle_cloud`, map→odom TF, and `lifecycle_manager_localization: Managed nodes are active`
+
+(Drop `mock:=true` on the robot. Keep `map:=` either way.)
 
 ### Rung 06: Nav2
 ```bash
-ros2 launch billiebot_bringup 06_nav2.launch.py mock:=true map:=/path/to/map.yaml
+ros2 launch billiebot_bringup 06_nav2.launch.py mock:=true map:="$MAP"
 ```
 **Verify:**
 - `navigate_to_pose` action available
 - Costmap topics publishing
+- `lifecycle_manager_navigation: Managed nodes are active`
 - `ros2 run billiebot_bringup verify_rung_06.sh`
 
 ### Rung 07: OAK-D Dog Detector
@@ -149,14 +159,15 @@ ros2 launch billiebot_bringup 13_mission.launch.py mock:=true
 
 ### Rung 14: Full Bringup
 ```bash
-ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
+ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true map:="$MAP"
 ```
+**Verify:** both `lifecycle_manager_localization` and `lifecycle_manager_navigation` log `Managed nodes are active`. Transform and dropped-message warnings during the first few seconds are normal while the mock TF chain fills in; they should stop.
 
 ## Multi-Machine Setup
 
 **Jetson Orin Nano:**
 ```bash
-ros2 launch billiebot_bringup jetson.launch.py
+ros2 launch billiebot_bringup jetson.launch.py map:="$MAP"
 ```
 
 **Raspberry Pi 5:**
@@ -164,14 +175,16 @@ ros2 launch billiebot_bringup jetson.launch.py
 ros2 launch billiebot_bringup pi.launch.py
 ```
 
-Update IPs in `billiebot_bringup/config/cyclonedds.xml` first.
+Update IPs in `billiebot_bringup/config/cyclonedds.xml` first. Add `mock:=true` on the Jetson side to bring the stack up without hardware — the `map:=` argument is still required, since mocking the hardware does not remove Nav2's need for a map.
+
+**Verify:** `Managed nodes are active` from `lifecycle_manager_navigation` on the Jetson. If instead you see `yaml-filename parameter is empty`, `Waiting for map....`, or `Timed out waiting for transform from base_link to map` repeating, the map did not load — see [INSTALLATION_AND_SETUP.md §2.2.3](INSTALLATION_AND_SETUP.md#223-clone-build-configure) for the checklist.
 
 ## Mock Test Suite
 
 Run all tests without hardware:
 ```bash
 # Terminal 1: Launch full mock stack
-ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
+ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true map:="$MAP"
 
 # Terminal 2: Run tests
 ./billiebot_ws/src/billiebot_tests/scripts/run_all_mock_tests.sh

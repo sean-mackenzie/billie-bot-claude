@@ -48,11 +48,16 @@ colcon build --symlink-install
 source install/setup.bash
 
 # Run full stack in mock mode (no hardware needed)
-ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
+ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true \
+    map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
 
 # Run verification tests
 ./src/billiebot_tests/scripts/run_all_mock_tests.sh
 ```
+
+`mock:=true` mocks the hardware, not the map — this launch runs `map_server` + AMCL, and the `map`
+argument defaults to empty, so omitting it leaves Nav2 stuck waiting for `/map`. See
+[Why Nav2 needs a map](docs/md/INSTALLATION_AND_SETUP.md#nav2-needs-a-map).
 
 ## Bringup Ladder
 
@@ -72,13 +77,15 @@ The system starts incrementally via numbered launch files:
 | 13 | `13_mission.launch.py` | Mission controller + action servers |
 | 14 | `14_full_bringup.launch.py` | Everything |
 
-All rungs support `mock:=true` for hardware-free testing.
+All rungs support `mock:=true` for hardware-free testing. Rungs 05, 06, and 14 additionally
+require `map:=<absolute path to a Nav2 map yaml>` — mock mode does not remove that need.
 
 ### Multi-Machine Deployment
 
 ```bash
-# Jetson Orin Nano
-ros2 launch billiebot_bringup jetson.launch.py
+# Jetson Orin Nano (map:= is required — it runs Nav2)
+ros2 launch billiebot_bringup jetson.launch.py \
+    map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
 
 # Raspberry Pi 5
 ros2 launch billiebot_bringup pi.launch.py

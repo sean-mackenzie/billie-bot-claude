@@ -292,33 +292,67 @@ container$ ros2 interface show billiebot_interfaces/msg/DogState | head -5
 ## 1.6 Run the full stack in mock mode
 
 ```bash
-container$ ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
+container$ ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true \
+    map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
 ```
 
 This is rung 14 of the bringup ladder — it chain-includes every subsystem (nav, perception, audio, cognition, mission) with all hardware mocked.
 
-**Optional — supply a map so Nav2 fully activates.** Without a map, `map_server` logs
-`yaml-filename parameter is empty` and Nav2's lifecycle bringup stalls at
-`Activating planner_server` (the global costmap's static layer waits forever for `/map`).
-The Verify topics/services below still appear, so this doesn't block the rest of Part 1 —
-but navigation itself stays inactive. To run with a map:
+<a id="nav2-needs-a-map"></a>
+
+**Why Nav2 needs a map — even in mock mode.** *(This is the authoritative explanation; the rest of the docs point back here.)*
+
+`mock:=true` mocks the *hardware interfaces* — lidar, base serial link, cameras, microphone. It
+does **not** eliminate Nav2's need for a map. Every launch that reaches rung 05 or above
+(`05_amcl`, `06_nav2`, `14_full_bringup`, `jetson.launch.py`) starts `map_server` and AMCL via
+`billiebot_navigation/launch/localization.launch.py`, so the `map` argument must point at a
+valid Nav2 map YAML, and that YAML's `image:` field must name an image file that actually
+exists (for the shipped map, `my_apartment_v1.pgm`).
+
+The `map` launch argument **defaults to an empty string on purpose** — the map is a deployment
+choice, so you name the one you want rather than inheriting someone else's apartment. The cost
+is that omitting it fails quietly rather than loudly:
+
+```text
+map_server: yaml-filename parameter is empty
+amcl: Waiting for map....
+Timed out waiting for transform from base_link to map
+```
+
+`map_server` never configures, so `lifecycle_manager_localization` cannot activate it, AMCL waits
+forever, the global costmap's static layer never receives `/map`, and Nav2's lifecycle bringup
+stalls at `Activating planner_server`. Nothing crashes — navigation is simply never alive.
+
+**The map to use.** The repo ships an apartment map, installed into the package share by
+`billiebot_navigation/CMakeLists.txt`, so this path works on any machine regardless of username
+or clone location:
+
+```bash
+container$ MAP_FILE="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
+container$ printf '%s\n' "$MAP_FILE"
+container$ test -f "$MAP_FILE" && echo "[PASS] map YAML exists" || echo "[FAIL] map YAML missing"
+```
+
+Inside the container `/ws/src/billiebot_navigation/maps/my_apartment_v1.yaml` (the mounted source
+tree) works too, and is shorter to type.
+
+**To use your own map instead:**
 
 1. Place `<name>.yaml` + `<name>.pgm` in `billiebot_ws/src/billiebot_navigation/maps/`.
    The yaml's `image:` field must exactly match the `.pgm` filename (it is resolved
    relative to the yaml's own directory).
 2. Rebuild so the map is installed:
    `colcon build --symlink-install --packages-select billiebot_navigation`.
-3. Launch with the `map` argument — use an **absolute path** (relative paths resolve
-   against the launch process's working directory and only work by accident):
+3. Pass it as `map:=...` — always an **absolute path** (relative paths resolve
+   against the launch process's working directory and only work by accident).
 
-```bash
-container$ ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true \
-    map:=/ws/src/billiebot_navigation/maps/my_apartment_v1.yaml
-```
-
-With a map loaded, the launch log shows
+**What success looks like.** With a map loaded, the launch log shows
 `lifecycle_manager_navigation: Managed nodes are active`, and
 `ros2 topic echo /map --once --field info` (second shell) returns the map metadata.
+
+> The Verify topics/services below, and the 22-test acceptance suite, do not check Nav2's
+> lifecycle state — they still pass without a map. So a map-less rung 14 doesn't block the rest
+> of Part 1; it just means navigation itself is inactive while you think it's running.
 
 **Verify** (in a second shell — `docker exec -it billiebot-dev bash`, then `cd /ws && source install/setup.bash`):
 
@@ -501,7 +535,52 @@ jetson$ echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> ~/.bashrc
 
 Install the **YOLOv8n blob** for the OAK-D ([Appendix B](#appendix-b--ml-model-assets)) and set its path in `billiebot_ws/src/billiebot_perception/config/perception.yaml` (`oakd_dog_detector → model_path`). The parameter ships empty; in real (non-mock) mode the node logs an error without it.
 
-**Verify:** `ros2 launch billiebot_bringup jetson.launch.py mock:=true` starts Nav2, the OAK-D detector, dog locator, and mission nodes (rungs 06–08 + 13, which chain-include base/lidar/EKF/AMCL) with no crash loops. Then re-run without `mock:=true` once §2.2.4 is done and the hardware is attached.
+**Verify:**
+
+```bash
+jetson$ ros2 launch billiebot_bringup jetson.launch.py \
+    mock:=true \
+    map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
+```
+
+This starts Nav2, the OAK-D detector, dog locator, and mission nodes (rungs 06–08 + 13, which chain-include base/lidar/EKF/AMCL) with no crash loops.
+
+> **The `map:=` argument is required, and `mock:=true` does not make it optional** — this launch includes `map_server` and AMCL, which need a real map YAML whatever the hardware is doing. See [§1.6 Why Nav2 needs a map](#nav2-needs-a-map). Keep the argument when you re-run without `mock:=true` after §2.2.4.
+
+**Success looks like** these lines in the launch log:
+
+```text
+Mock scan publisher started (MOCK)
+BaseBridge started (MOCK)
+OAK-D detector running in MOCK mode
+MissionController started
+Managed nodes are active
+```
+
+The criterion that matters is `Managed nodes are active` from `lifecycle_manager_navigation` — that is Nav2 fully activated. (`lifecycle_manager_localization` reports the same line for `map_server` + AMCL; both should appear.) Brief startup complaints about transforms or dropped messages are normal while the mock TF chain fills in — they are acceptable as long as they stop and every lifecycle-managed node reaches active.
+
+**If it stalls instead**, and the log keeps repeating any of:
+
+```text
+yaml-filename parameter is empty
+Waiting for map....
+Timed out waiting for transform from base_link to map
+```
+
+then the map never loaded. Check, in order:
+
+1. `map:=...` was actually passed (it defaults to empty — the launch will not tell you).
+2. The YAML path exists.
+3. The YAML's `image:` field names an image file that exists.
+4. The YAML *and* its image are both present in whichever tree your path points at — the installed package share needs `colcon build` to have run since the map was added.
+
+```bash
+jetson$ MAP_FILE="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
+jetson$ printf '%s\n' "$MAP_FILE"
+jetson$ test -f "$MAP_FILE" && echo "[PASS] map YAML exists" || echo "[FAIL] map YAML missing"
+jetson$ test -f "$(dirname "$MAP_FILE")/$(grep '^image:' "$MAP_FILE" | awk '{print $2}')" \
+        && echo "[PASS] map image exists" || echo "[FAIL] map image missing"
+```
 
 ### 2.2.4 Device access (serial + OAK-D)
 
@@ -663,7 +742,13 @@ EOF
 ## 2.5 Multi-machine bringup
 
 1. Confirm §2.1 is done on both machines (IPs match `cyclonedds.xml`, `RMW_IMPLEMENTATION` exported, workspace rebuilt after any IP edit).
-2. Start the Jetson side: `jetson$ ros2 launch billiebot_bringup jetson.launch.py`
+2. Start the Jetson side — with the map of the space you are actually operating in ([why](#nav2-needs-a-map)):
+
+   ```bash
+   jetson$ ros2 launch billiebot_bringup jetson.launch.py \
+       map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
+   ```
+
 3. Start the Pi side (inside its container): `container$ ros2 launch billiebot_bringup pi.launch.py`
 4. **Verify cross-machine discovery** — on the Jetson:
 
@@ -690,29 +775,38 @@ source install/setup.bash
 
 **2. Climb the bringup ladder in mock mode.** Each rung chain-includes the ones below it, so you can jump straight to any rung. (Exception: rungs 04 SLAM and 05 AMCL are *alternatives* — each includes 01–03, but 05 does not include 04. Map with 04 first, then localize on the saved map with 05+.)
 
+Rungs 05, 06, and 14 start `map_server` + AMCL and need `$MAP` even in mock mode ([why](#nav2-needs-a-map)). Set it once per shell:
+
+```bash
+export MAP="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
+```
+
 | Rung | Command (`ros2 launch billiebot_bringup …`) | Adds |
 |---|---|---|
 | 01 | `01_lidar.launch.py mock:=true` | RPLidar driver |
 | 02 | `02_base.launch.py mock:=true` | base bridge + robot_state_publisher |
 | 03 | `03_ekf.launch.py mock:=true` | robot_localization EKF |
 | 04 | `04_slam.launch.py mock:=true` | slam_toolbox (mapping) |
-| 05 | `05_amcl.launch.py mock:=true` | AMCL (saved-map localization) |
-| 06 | `06_nav2.launch.py mock:=true` | full Nav2 stack |
+| 05 | `05_amcl.launch.py mock:=true map:="$MAP"` | AMCL (saved-map localization) |
+| 06 | `06_nav2.launch.py mock:=true map:="$MAP"` | full Nav2 stack |
 | 07–10 | `07_oakd` / `08_dog_locator` / `09_thermal` / `10_noir` | perception |
 | 11 | `11_audio.launch.py mock:=true` | audio classifier + speaker |
 | 12 | `12_cognition.launch.py` | state fusion, logger, report server |
 | 13 | `13_mission.launch.py mock:=true` | BT mission controller + action servers |
-| 14 | `14_full_bringup.launch.py mock:=true` | everything |
+| 14 | `14_full_bringup.launch.py mock:=true map:="$MAP"` | everything |
 
 **3. Run the acceptance suite** (22 tests; needs rung 14 running in another shell):
 
 ```bash
 # Terminal 1:
-ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
+ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true \
+    map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
 # Terminal 2:
 cd <workspace> && source install/setup.bash
 ./src/billiebot_tests/scripts/run_all_mock_tests.sh
 ```
+
+(The suite itself does not assert on Nav2's lifecycle state, so it passes without `map:=` too — but then navigation is inactive underneath a green test run, which is not what you want to verify against.)
 
 **Verify:** the script reports all TC-xx checks passing.
 
@@ -832,6 +926,7 @@ The detector creates a `YoloSpatialDetectionNetwork` with a **416×416** preview
 | Docker build/run is very slow on the Mac; `docker image inspect` shows `amd64` | You based on an amd64-only image (e.g. `osrf/ros:humble-desktop`). Use `ros:humble` per §1.3 — it's arm64-native. |
 | Machines can't see each other's topics | `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` not exported (launch files only set `CYCLONEDDS_URI`); or IPs in `cyclonedds.xml` don't match reality; or you edited the source XML but didn't rebuild (the launch files read the **installed** copy). |
 | `ros2 topic list` differs between shells on one machine | One shell hasn't sourced `install/setup.bash`, or has a different `ROS_DOMAIN_ID`/`RMW_IMPLEMENTATION`. `ros2 daemon stop` after changing env vars. |
+| `map_server: yaml-filename parameter is empty`, `amcl: Waiting for map....`, `Timed out waiting for transform from base_link to map`, or Nav2 stuck at `Activating planner_server` | No `map:=` argument — it defaults to empty, and `mock:=true` does **not** remove the need for one. Pass an absolute path to a Nav2 map YAML whose `image:` names an existing file. See [§1.6 Why Nav2 needs a map](#nav2-needs-a-map); checklist in [§2.2.3](#223-clone-build-configure). |
 | `serial.SerialException: Permission denied` | User not in `dialout` (Jetson) — re-login after `usermod`. |
 | `rplidar_node` dies with `*** buffer overflow detected ***` | Upstream `rplidar_ros` 2.0.0 aborts this way instead of printing a readable error when it cannot open the serial port — the message is a red herring, the port is simply missing. Run `ros2 run billiebot_bringup check_devices.sh` to find out why. |
 | Lidar fails to open port | Run `ros2 run billiebot_bringup check_devices.sh`. The lidar is addressed by the by-id path in `billiebot_bringup/config/lidar.yaml`, so this is not an enumeration-order problem — the symlink is missing (unplugged/unpowered), or the adapter reports a different name than the config expects. Compare `ls -l /dev/serial/by-id/` against the config value. |
