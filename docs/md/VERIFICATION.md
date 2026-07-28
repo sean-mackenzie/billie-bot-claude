@@ -12,11 +12,52 @@ source install/setup.bash
 
 Each rung builds on the previous. Use `mock:=true` for hardware-free testing.
 
+**On hardware (skip for `mock:=true`):** run the device preflight first — `ros2 run billiebot_bringup check_devices.sh` should report `[PASS]` for the RPLidar, the Arduino, `dialout` membership, and the OAK-D. Jetson device setup is in `INSTALLATION_AND_SETUP.md` §2.2.4.
+
 ### Rung 01: Lidar
 ```bash
 ros2 launch billiebot_bringup 01_lidar.launch.py mock:=true
 ```
 **Verify:** `/scan` topic is publishing (`ros2 topic echo /scan --once`)
+- `ros2 run billiebot_bringup verify_rung_01.sh`
+
+#### Rung 01 on real hardware (Jetson)
+
+Do the device setup in `INSTALLATION_AND_SETUP.md` §2.2.4 first. Drop `mock:=true` to start the real driver:
+
+```bash
+jetson$ ros2 launch billiebot_bringup 01_lidar.launch.py
+```
+
+This **blocks** — leave it running and open a **second SSH session** for the checks:
+
+```bash
+jetson$ ros2 param get /rplidar_node serial_port
+# expect the /dev/serial/by-id/usb-Silicon_Labs_CP2102_... path from
+# billiebot_bringup/config/lidar.yaml — NOT /dev/ttyUSB0 or /dev/ttyUSB1
+jetson$ ros2 run billiebot_bringup verify_rung_01.sh
+# expect [PASS] x2
+```
+
+Expect roughly **5–8 Hz** on `/scan`, not the mock's 10 Hz — the A1 spins slower in `Standard` mode. A sagging or jittery rate usually means USB power or serial contention.
+
+> If `rplidar_node` dies with `*** buffer overflow detected ***`, the port is simply missing — that is upstream `rplidar_ros` 2.0.0 failing unhelpfully, not a clue about the cause. Run `check_devices.sh`.
+
+#### Plug-order regression test (GAP-20)
+
+The point of addressing devices by `/dev/serial/by-id/` is that USB enumeration order stops mattering. Prove it after any hardware change:
+
+```bash
+# Ctrl-C the launch above, then physically unplug the RPLidar and the Arduino
+# and plug them back in the OPPOSITE order.
+jetson$ ls -l /dev/serial/by-id/
+# the two symlinks now point at swapped ../../ttyUSBn targets — that is expected
+jetson$ ros2 run billiebot_bringup check_devices.sh     # still all [PASS]
+jetson$ ros2 launch billiebot_bringup 01_lidar.launch.py   # still comes up
+jetson$ ros2 launch billiebot_bringup 02_base.launch.py    # still comes up
+```
+
+Both rungs must work regardless of the order the cables went in. Repeat once across a full reboot.
 
 ### Rung 02: Base + Description
 ```bash
@@ -28,7 +69,7 @@ ros2 launch billiebot_bringup 02_base.launch.py mock:=true
 - `/battery_state` publishing BatteryState
 - `/e_stop` service available
 - TF tree: `odom → base_link → chassis → (sensor frames)`
-- `./scripts/verify_rung_02.sh`
+- `ros2 run billiebot_bringup verify_rung_02.sh`
 
 ### Rung 03: EKF
 ```bash
@@ -55,7 +96,7 @@ ros2 launch billiebot_bringup 06_nav2.launch.py mock:=true map:=/path/to/map.yam
 **Verify:**
 - `navigate_to_pose` action available
 - Costmap topics publishing
-- `./scripts/verify_rung_06.sh`
+- `ros2 run billiebot_bringup verify_rung_06.sh`
 
 ### Rung 07: OAK-D Dog Detector
 ```bash
@@ -95,7 +136,7 @@ ros2 launch billiebot_bringup 12_cognition.launch.py
 - `/billie/state` publishing DogState
 - `/get_dog_state` service responds
 - `http://localhost:8080/health` returns OK
-- `./scripts/verify_rung_12.sh`
+- `ros2 run billiebot_bringup verify_rung_12.sh`
 
 ### Rung 13: Mission
 ```bash

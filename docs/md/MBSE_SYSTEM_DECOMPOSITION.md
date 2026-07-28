@@ -213,7 +213,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 |---|---|---|---|---|---|---|
 | NAV-01 | The navigation subsystem shall build a 2-D occupancy grid at 0.05 m resolution from `/scan` using online asynchronous SLAM with loop closure (Ceres pose-graph backend, 12 m max laser range). | SYS-NAV-1 | D | ACT-08 a5; IBD-03 blk slam | ✅ | `billiebot_navigation/config/slam_toolbox_params.yaml` |
 | NAV-02 | The navigation subsystem shall persist the map to disk (YAML+PGM) and reload it via `map_server` for localization runs. | SYS-NAV-1 | D | ACT-08 a6; IBD-03 blk map_server | ✅ | `slam_toolbox` save services; `localization.launch.py` |
-| NAV-03 | The lidar driver shall publish `sensor_msgs/LaserScan` on `/scan` in frame `laser_frame` (RPLidar A1, 115200 baud, angle-compensated). | SYS-NAV-1/2/3 | T | IBD-01 c1; IBD-03 c5; ACT-08 a2 | ✅ | `01_lidar.launch.py` (real branch) |
+| NAV-03 | The lidar driver shall publish `sensor_msgs/LaserScan` on `/scan` in frame `laser_frame` (RPLidar A1, 115200 baud, angle-compensated), addressed by a stable device path. | SYS-NAV-1/2/3 | T | IBD-01 c1; IBD-03 c5; ACT-08 a2 | ✅ | `01_lidar.launch.py` (real branch) + `billiebot_bringup/config/lidar.yaml` (by-id port, GAP-20) |
 | NAV-04 | A mock scan source shall exist so rungs 01/04/05/06 are exercisable without hardware. | SYS-PLT-4 (testability) | D | ACT-08 **[GAP-16]** | ❌ | mock branch launches a `base_bridge` stub with no `/scan` publisher |
 | NAV-05 | The localization subsystem shall estimate map-frame pose with AMCL (500–2000 particles, likelihood-field model, differential motion model) and broadcast the `map→odom` transform; mean position error ≤ 0.15 m against surveyed ground truth. | SYS-NAV-2 | T | ACT-08 a7–a9; IBD-04 | ⬜ | `config/amcl_params.yaml`; quantitative test pending HW |
 | NAV-06 | The state-estimation subsystem shall fuse wheel odometry (and IMU when enabled) in a 30 Hz planar EKF publishing `/odometry/filtered`. | SYS-NAV-2 | T | ACT-06 a11; IBD-03 blk ekf **[GAP-2]** | 🟡 | `config/ekf.yaml`; `imu0` block commented out pending A4/A5 rewire |
@@ -389,7 +389,7 @@ Type the IBD ports with these interface blocks:
 
 | Interface block | Physical layer | Used by (IBD) | Key properties |
 |---|---|---|---|
-| `IF_USB_UART_115200` | USB-serial | IBD-01 c1 (lidar→jet) | 115200 baud, `/dev/ttyUSB1` (enumeration-order sensitive) |
+| `IF_USB_UART_115200` | USB-serial (CP2102) | IBD-01 c1 (lidar→jet) | 115200 baud; stable `/dev/serial/by-id/...` path (`billiebot_bringup/config/lidar.yaml`) |
 | `IF_USB3` | USB 3.0 | IBD-01 c2 (oakd→jet) | ≈ 4.5 W budget; powered-hub contingency |
 | `IF_UART_Serial_57600` | USB-serial (CH340) | IBD-01 c5 (jet↔mcu) | 57600 baud, ASCII, CR-terminated; commands `m/e/r/a`; stable `/dev/serial/by-id/...` path |
 | `IF_I2C` | I²C | IBD-01 c3 (thermal→pi, addr 0x33, bus 1); c6 (imu→mcu, «futureRelease») | MLX90640 4 Hz refresh; BNO055 blocked by A4/A5 conflict |
@@ -466,7 +466,7 @@ flowchart LR
 
 | # | Connector (source → target) | Interface block | Item flow(s) | Notes |
 |---|---|---|---|---|
-| c1 | lidar.usb → jet.usb | `IF_USB_UART_115200` | `LaserScan` raw stream | `/dev/ttyUSB1` |
+| c1 | lidar.usb → jet.usb | `IF_USB_UART_115200` | `LaserScan` raw stream | `/dev/serial/by-id/usb-Silicon_Labs_CP2102_..._0001-if00-port0` |
 | c2 | oakd.usb3 → jet.usb3 | `IF_USB3` | RGB frames + on-device YOLO detections + stereo depth | detection runs on RVC2, not Jetson GPU |
 | c3 | thermal.i2c → pi.i2c | `IF_I2C` | `ThermalFrame` raw | bus 1, addr 0x33 |
 | c4 | noir.csi → pi.csi0 | `IF_CSI` | `NoIRFrame` raw | |
@@ -1090,7 +1090,7 @@ Launch evidence: `jetson.launch.py` (rungs 06 + 07 + 08 + 13), `pi.launch.py` (r
 
 **L2 status rollup (97 requirements):** ✅ Satisfied 57 · 🟡 Partial 19 · ❌ Gap 13 · ⬜ HW-pending 8.
 
-Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code discrepancy analysis; GAP-11, 12, 13, 15, 18, 19 are renumbered or added by this report. **Disposition: F = fix code · M = update model/design doc · P = parameter/config change · H = hardware task.**
+Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code discrepancy analysis; GAP-11, 12, 13, 15, 18, 19 are renumbered or added by this report; GAP-20 was added later from the bringup-ladder defect list (Appendix B-9). **Disposition: F = fix code · M = update model/design doc · P = parameter/config change · H = hardware task.**
 
 | GAP | Description | Requirements hit | Disposition |
 |---|---|---|---|
@@ -1113,6 +1113,7 @@ Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code 
 | GAP-17 | Speak action naming split: `/speak` (speaker_node) vs `/mission/speak` (wrapper); BT XML `Speak` id binds to neither | AUD-06 | F (canonical name) or M |
 | GAP-18 | `/oak/rgb/preview` in design §5.2 but not published (operator visualization) | SYS-PLT-4 (minor) | M or F |
 | GAP-19 | Host naming drift: design says Pi 5; configs/README say Pi 4 — **Resolved 2026-07-12**, all references aligned to Raspberry Pi 5 | documentation only | M |
+| GAP-20 | Lidar addressed by raw `/dev/ttyUSB1` while the Arduino used a by-id path — USB enumeration order could swap them — **Resolved 2026-07-28**, lidar params moved to `billiebot_bringup/config/lidar.yaml` on the stable CP2102 by-id path | NAV-03 | P (done) |
 
 ---
 
