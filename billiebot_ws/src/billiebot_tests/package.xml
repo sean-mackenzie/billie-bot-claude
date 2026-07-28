@@ -7,7 +7,6 @@
   <maintainer email="billie@todo.todo">billie</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
 
   <depend>rclpy</depend>
   <depend>billiebot_interfaces</depend>
