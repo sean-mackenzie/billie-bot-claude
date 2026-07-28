@@ -1,8 +1,27 @@
 # BillieBot — Discrepancy Resolution Plan
 
-**Purpose:** A self-contained remediation guide for the 19 design-vs-implementation discrepancies (GAP-1…GAP-19) identified during the systems decomposition of 2026-07-04, plus GAP-20 added later from the bringup-ladder defect list. Each gap gets a resolution sheet with exact file/symbol locations, a recommended fix, and closure-verification commands, so a future session or engineer can pick this document up cold and work through it.
+**Purpose:** A self-contained remediation guide for the 19 design-vs-implementation discrepancies (GAP-1…GAP-19) identified during the systems decomposition of 2026-07-04, plus GAP-20 and GAP-21 promoted later from the bringup-ladder defect list. Each gap gets a resolution sheet with exact file/symbol locations, the fix, and closure-verification commands, so a future session or engineer can pick this document up cold and work through it.
 **Companion documents:** `docs/MBSE_SYSTEM_DECOMPOSITION.md` (§5.4 gap register — the numbering used here is identical; §2.3 for the L2 requirement IDs cited below) · `docs/BRINGUP_LADDER_ANALYSIS.md` (per-rung runtime context, Appendix B defects) · `docs/VERIFICATION.md` (TC-01…22).
-**Date:** 2026-07-04. All file:line references were verified against the repository on this date; re-verify line numbers if the files have since changed (symbol names are the stable anchor).
+**Originally written:** 2026-07-04 · **Last reviewed:** 2026-07-28
+
+> **This is a living document, not a historical record.** The §2 status column is the authority on
+> what is still open. Close a gap by updating §2, its §4 sheet (Status line + a **Fix applied** and
+> **Verify closure** section recording what was actually observed), the Appendix B entry in
+> `BRINGUP_LADDER_ANALYSIS.md`, and the §5.4 register in `MBSE_SYSTEM_DECOMPOSITION.md` — all in the
+> same PR — then close the matching GitHub issue.
+
+File:line references were accurate when each sheet was last touched; re-verify them if the files have since changed (symbol names are the stable anchor).
+
+### Revision log
+
+| Date | Change |
+|---|---|
+| 2026-07-04 | Initial plan, GAP-1…GAP-19 |
+| 2026-07-11 | GAP-14 resolved (firmware watchdog 500 ms) |
+| 2026-07-12 | GAP-19 resolved (Pi 5 naming) |
+| 2026-07-17 | GAP-5, GAP-6, GAP-4 resolved (TF ownership, single EKF, filtered odom) |
+| 2026-07-28 | GAP-20 resolved (lidar by-id path) |
+| 2026-07-28 | GAP-16 marked resolved — the fix had landed in code but was never recorded here; GAP-21 added and resolved (empty `map` default now documented). Both re-verified by running the mock ladder |
 
 ---
 
@@ -25,6 +44,7 @@
 | GAP-6 | Second `ekf_filter_node` launched by rung 06 | 🟠 | F | A | S | NAV-07 | Resolved (2026-07-17) |
 | GAP-4 | Nav2 consumes raw `/odom`; `/odometry/filtered` unused | 🟡 | P | A | S | NAV-08 | Resolved (2026-07-17) |
 | GAP-20 | Lidar serial port hardcoded to `/dev/ttyUSB1` | 🟡 | P | A | S | NAV-03 | Resolved (2026-07-28) |
+| GAP-21 | Empty `map` default silently disables localization | ⚪ | M | A | S | NAV-02, NAV-05 | Resolved (2026-07-28) |
 | GAP-8 | Mission never learns of e-stop (`_estopped` never set) | 🟠 | F | A | S | MSN-02 | Open |
 | GAP-7 | Mission never dispatches Nav2 goals; failure counter dead | 🟠 | F | B | L | MSN-05, NAV-14, SYS-NAV-4/6, SYS-FND-1 | Open |
 | GAP-10 | No patrol-waypoint executor; `patrol_waypoints.yaml` unloaded | 🟠 | F | B | M | MSN-06, MSN-14, SYS-NAV-6 | Open |
@@ -34,7 +54,7 @@
 | GAP-9 | Logger gaps: empty snapshots, hard-coded action, no `/events/last` | 🟠 | F | C | M | STL-12/13/14, RPT-02, SYS-EXT-3 | Open |
 | GAP-12 | `/dog/found` has two publishers (and no false-on-loss from locator) | 🟡 | F | C | S | PER-04 | Open |
 | GAP-3 | `BatteryStatus.msg` defined but never published | 🟡 | M | C | S | IFC-06 | Open |
-| GAP-16 | Rung 01 mock launches a base_bridge stub — no mock `/scan` | 🟠 | F | D | S | NAV-04, PLT-06 | Open |
+| GAP-16 | Rung 01 mock launches a base_bridge stub — no mock `/scan` | 🟠 | F | D | S | NAV-04, PLT-06 | Resolved (2026-07-28) |
 | GAP-17 | Speak action naming split (`/speak` vs `/mission/speak`) | 🟡 | F | D | S | AUD-06 | Open |
 | GAP-1 | Mission is a Python state machine; designed BT is compiled but never run | 🟠 | F* | D | L | SYS-EXT-2, MSN-01/12, EXT-02 | Open (decision) |
 | GAP-2 | IMU dormant — BNO055 blocked by A4/A5 encoder pin conflict | 🟠 | H | D | M | NAV-06 | Open (hardware) |
@@ -47,7 +67,7 @@
 
 ### Phase A — Safety & correctness floor (before any hardware driving)
 
-**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-20 → GAP-8.** These six are all S-effort and remove three classes of danger: motors that keep spinning after a control-path loss (GAP-14 — **resolved**, firmware watchdog now fires at 500 ms), a TF/odometry stack that lies to the navigator (GAP-5/6 — **resolved 2026-07-17**, landed together: the EKF is now the sole `odom→base_link` owner and rung 06 starts exactly one `ekf_filter_node`; GAP-4 — **resolved 2026-07-17**, both Nav2 odometry consumers now read `/odometry/filtered`), and a bringup that depends on USB plug-in order (GAP-20 — **resolved 2026-07-28**, the lidar now uses a stable by-id device path like the Arduino). GAP-8 — the only Phase A gap still open — completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
+**GAP-14 → GAP-5 → GAP-6 → GAP-4 → GAP-20 → GAP-8.** These six are all S-effort and remove three classes of danger: motors that keep spinning after a control-path loss (GAP-14 — **resolved**, firmware watchdog now fires at 500 ms), a TF/odometry stack that lies to the navigator (GAP-5/6 — **resolved 2026-07-17**, landed together: the EKF is now the sole `odom→base_link` owner and rung 06 starts exactly one `ekf_filter_node`; GAP-4 — **resolved 2026-07-17**, both Nav2 odometry consumers now read `/odometry/filtered`), and a bringup that depends on USB plug-in order (GAP-20 — **resolved 2026-07-28**, the lidar now uses a stable by-id device path like the Arduino). GAP-21 (**resolved 2026-07-28**, doc-only) removes a related foot-gun: the `map` launch argument still defaults to empty by design, but the guides now always pass the bundled apartment map, so a bringup that silently skips localization is no longer the documented path. GAP-8 — the only Phase A gap still open — completes the e-stop chain so the mission layer latches SAFE instead of continuing to sequence behaviors while the base is frozen. Order matters only in that GAP-5 and GAP-6 should land together (both touch who owns `odom→base_link`).
 
 ### Phase B — Close the autonomy loop (the MVP's core promise)
 
@@ -61,7 +81,7 @@
 
 ### Phase D — Testability, architecture & hygiene
 
-**GAP-16 → GAP-17 → GAP-1 → GAP-2 → GAP-18 → GAP-19.** GAP-16 first: a real mock `/scan` publisher makes rungs 04/05/06 exercisable off-hardware, which de-risks everything above. GAP-1 (behavior-tree vs. state-machine decision) is deliberately late: the Phase B work can land in the existing Python controller either way, and the decision is cheaper once the required behaviors are known concretely. GAP-2 waits on the physical A4/A5 rewire (see `docs/MEASURE_ME.md`).
+**GAP-16 → GAP-17 → GAP-1 → GAP-2 → GAP-18 → GAP-19.** GAP-16 came first and is **resolved 2026-07-28**: the `mock_scan` publisher makes rungs 04/05/06 exercisable off-hardware, which de-risked everything above — mock runs now produce real `/scan` and a real (synthetic) `/map`. GAP-17 is the remaining Phase D code item. GAP-1 (behavior-tree vs. state-machine decision) is deliberately late: the Phase B work can land in the existing Python controller either way, and the decision is cheaper once the required behaviors are known concretely. GAP-2 waits on the physical A4/A5 rewire (see `docs/MEASURE_ME.md`).
 
 ---
 
@@ -133,6 +153,22 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
   - **Pre-existing upstream defect surfaced while verifying, not caused by this change:** when the port is missing, `rplidar_ros` 2.0.0 dies with a glibc `*** buffer overflow detected ***` (SIGABRT) instead of a readable error. Confirmed identical for an 11-, 12-, and 87-character non-existent path, so it is unrelated to the by-id path's length. It is also why `check_devices.sh` earns its keep — the driver's own failure message tells you nothing.
   - If bringup ever moves to a systemd unit, the by-id symlink may not exist yet at unit start; that would need `After=dev-serial-by\x2did-….device` or a udev settle. Not applicable today (launches are manual).
 
+#### GAP-21 — Empty `map` launch default silently disables localization
+
+**Status:** Resolved (2026-07-28, PR #29) · **Severity:** ⚪ Doc-only · **Disposition:** M · **Effort:** S
+
+Promoted from `BRINGUP_LADDER_ANALYSIS.md` Appendix B-6, the same way GAP-20 was promoted from B-9.
+
+- **What/Where:** The `map` launch argument is declared `default_value=''` in `…/src/billiebot_bringup/launch/05_amcl.launch.py:19`, `…/src/billiebot_navigation/launch/localization.launch.py:19`, and `…/src/billiebot_bringup/launch/jetson.launch.py:27` (forwarded through `06_nav2` and `14_full_bringup`). Every guide that showed a Nav2-bearing launch omitted the argument — most consequentially `INSTALLATION_AND_SETUP.md` §2.2.3, the Jetson post-build verification step.
+- **Why it matters:** NAV-02 (map persisted and reloaded via `map_server`), NAV-05 (AMCL `map→odom`). With the argument unset, `map_server` gets an empty `yaml_filename`, its lifecycle *configure* fails, `lifecycle_manager_localization` cannot activate it, AMCL logs `Waiting for map....` forever, and the global costmap's static layer never receives `/map` — so `lifecycle_manager_navigation` never reaches `Managed nodes are active`. Nothing crashes; navigation is simply never alive, which is the worst failure shape for a verification step.
+- **Fix applied — documentation only. The launch defaults are deliberately unchanged.** Appendix B-6 offered two dispositions ("fail loudly (launch-time assertion) **or** document a bundled test map"); the second was chosen so the map stays an explicit deployment choice rather than something a launch file silently picks:
+  1. `INSTALLATION_AND_SETUP.md` §1.6 gained the authoritative explanation (anchor `#nav2-needs-a-map`): what `mock:=true` does and does not mock, why the empty default exists, the failure signature, and how to supply your own map.
+  2. §2.2.3's verification command now passes the bundled map, with the expected success lines and a stall checklist; Appendix C gained a symptom→cause row.
+  3. Every remaining operational command across `README.md`, `VERIFICATION.md`, `INSTALLATION_AND_SETUP.md` (§2.5, Part 3 ladder table + acceptance suite) now carries `map:=`; the `/path/to/map.yaml` placeholders were replaced with the real shipped map.
+  4. The documented path is the installed package share — `"$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"` — which is independent of username and clone location. No install rule changed: `billiebot_navigation/CMakeLists.txt` already installs `maps/`.
+- **Verify closure (executed 2026-07-28, `billiebot-dev` Docker container, repo at `/ws`, container given `192.168.42.100` so the repo's unmodified `cyclonedds.xml` peer list resolves):** The documented path resolved to `/ws/install/billiebot_navigation/share/billiebot_navigation/maps/my_apartment_v1.yaml`; YAML and `.pgm` both present. Running the exact documented command → `map_io: Loading yaml file: …`, `Read map …my_apartment_v1.pgm: 275 X 135 map @ 0.05 m/cell`, `amcl: Received a 275 X 135 map @ 0.050 m/pix`; **both** `lifecycle_manager_localization` and `lifecycle_manager_navigation` logged `Managed nodes are active`. Zero occurrences of `yaml-filename parameter is empty`, `Waiting for map....`, `Failed to load map`, `Failed to find a free participant index`, or `process has died`; zero WARN/ERROR/FATAL in the whole run; clean SIGINT shutdown. Independently confirmed on the Jetson by the maintainer before the change was written.
+- **Risks/notes:** The foot-gun still exists for anyone who ignores the docs — omitting `map:=` remains silent. If that proves insufficient in practice, the other disposition (a launch-time assertion that fails loudly on an empty `map`) is still available and would not conflict with this fix. Note the apartment map is a *test/most-common-case* map, not a universal default: on a different site, pass that site's map.
+
 #### GAP-8 — Mission never learns of e-stop
 
 **Status:** Open · **Severity:** 🟠 Major-functional · **Disposition:** F · **Effort:** S
@@ -158,7 +194,7 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
   3. **Result handling:** on SUCCEEDED → advance `_current_wp_idx` (mod len), reset `_nav_failure_count = 0`, `_nav_active = False`. On ABORTED/CANCELED → `_nav_failure_count += 1`, `_nav_active = False` (Nav2's behavior_server has already run spin/backup recoveries internally before aborting — the counter counts *failed navigations*, satisfying the "3 failed recoveries → SAFE" intent of SYS-NAV-4).
   4. **Mode exits:** on entering TRACK_OBSERVE or SAFE, cancel any active goal (`goal_handle.cancel_goal_async()`).
   5. **Alert:** SAFE entry should raise an operator alert — blocked on PROP-01 (no alert channel exists); minimally, log at ERROR and set a field the report server's `/health` can expose.
-- **Verify closure:** Requires a Nav2 that accepts goals — on hardware with a map, or in mock after GAP-16 + a map. Mock-level partial check: `ros2 topic echo /billiebot/mission_status` shows `nav_active: true` and `current_waypoint` advancing; force failures (no map loaded → goals abort) and confirm `recovery_count` climbs and mode → SAFE at 3. Full check = TC-16 + TC-19 on hardware.
+- **Verify closure:** Requires a Nav2 that accepts goals — on hardware with a map, or in mock with a map (GAP-16 and GAP-21 both resolved, so the mock path is available now). Mock-level partial check: `ros2 topic echo /billiebot/mission_status` shows `nav_active: true` and `current_waypoint` advancing; force failures (no map loaded → goals abort) and confirm `recovery_count` climbs and mode → SAFE at 3. Full check = TC-16 + TC-19 on hardware.
 - **Risks/notes:** Largest change in the plan — keep it a PR of its own. The `patrol_waypoints` param default (mission_controller.py:43-44) omits `bathroom` while `…/src/billiebot_mission/config/mission.yaml` includes it; the GAP-10 loader supersedes both.
 
 #### GAP-10 — No patrol-waypoint source of truth or executor
@@ -250,15 +286,18 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
 
 ### Phase D sheets
 
-#### GAP-16 — Rung 01 mock produces no `/scan`
+#### GAP-16 — Rung 01 mock produced no `/scan`
 
-**Status:** Open · **Severity:** 🟠 Major-functional (test infrastructure) · **Disposition:** F · **Effort:** S
+**Status:** Resolved (2026-07-28; fix landed earlier in commit `c9a40c3`, recorded here 2026-07-28) · **Severity:** 🟠 Major-functional (test infrastructure) · **Disposition:** F · **Effort:** S
 
-- **What/Where:** `…/src/billiebot_bringup/launch/01_lidar.launch.py:33-43` — the mock branch launches `billiebot_base`'s `base_bridge` executable named `mock_lidar_stub`, with the in-file comment "a dedicated mock scan publisher would be better. For now, this is a placeholder." `base_bridge` has no `/scan` publisher, so: rung 01's own verify criterion fails in mock, rungs 04/05/06 idle without scans, and every mock run of rung ≥ 04 spawns a **duplicate base_bridge** (second `/odom`, `/e_stop`, TF broadcaster).
-- **Why it matters:** NAV-04, PLT-06. The entire hardware-free ladder above rung 03 is untestable, and the duplicate node corrupts the rungs that *are* testable.
-- **Recommended fix:** Write `mock_scan_publisher.py` in `billiebot_bringup` (or `billiebot_base`): publishes `sensor_msgs/LaserScan` at ~6 Hz, `frame_id: laser_frame`, 360 samples over 2π, ranges 0.15–12 m simulating a simple rectangular room (parameterize room size). Register as an entry point; replace the mock branch in `01_lidar.launch.py` with it. This also unblocks mock SLAM (rung 04 can then actually build a toy map) and TC-23.
-- **Verify closure:** `ros2 launch billiebot_bringup 01_lidar.launch.py mock:=true` → `./…/scripts/verify_rung_01.sh` passes; `ros2 launch billiebot_bringup 04_slam.launch.py mock:=true` → `ros2 node list` shows exactly one `base_bridge`; `/map` appears after simulated motion.
-- **Risks/notes:** Keep the synthetic room consistent with wheel odometry (static room + moving robot needs scan generation from the robot's mock pose — acceptable v1: static scan, which still exercises topic plumbing; note the limitation in the node docstring).
+- **What/Where:** `…/src/billiebot_bringup/launch/01_lidar.launch.py` — the mock branch used to launch `billiebot_base`'s `base_bridge` executable named `mock_lidar_stub`, with the in-file comment "a dedicated mock scan publisher would be better. For now, this is a placeholder." `base_bridge` has no `/scan` publisher, so: rung 01's own verify criterion failed in mock, rungs 04/05/06 idled without scans, and every mock run of rung ≥ 04 spawned a **duplicate base_bridge** (second `/odom`, `/e_stop`, TF broadcaster).
+- **Why it matters:** NAV-04, PLT-06. The entire hardware-free ladder above rung 03 was untestable, and the duplicate node corrupted the rungs that *were* testable.
+- **Fix applied:**
+  1. New node `…/src/billiebot_base/billiebot_base/mock_scan.py` — publishes `sensor_msgs/LaserScan` at 10 Hz, `frame_id: laser_frame`, `NUM_SAMPLES = 360` over 2π, ray-casting a rectangular room (`ROOM_HALF_X = 2.5 m`, `ROOM_HALF_Y = 2.0 m`, i.e. 5.0 × 4.0 m) with per-beam Gaussian noise (σ = 0.01 m) and `range_min` 0.15 m. Rate and frame are parameters (`rate_hz`, `frame_id`).
+  2. Registered as the `mock_scan` entry point in `…/src/billiebot_base/setup.py:26`.
+  3. `01_lidar.launch.py`'s `IfCondition(mock)` branch now launches `mock_scan` instead of the `base_bridge` stub, which is what also closes GAP-16's duplicate-node half (Appendix B-2).
+- **Verify closure (executed 2026-07-28, `billiebot-dev` Docker container, repo mounted at `/ws`):** `01_lidar.launch.py mock:=true` → `ros2 node list` shows **`/mock_scan` alone**; `ros2 topic hz /scan` → **10.008 Hz** (min 0.097 s, max 0.103 s); `verify_rung_01.sh` → **`[PASS]` ×2** (`/scan exists`, `/scan is publishing`). `04_slam.launch.py mock:=true` → `ros2 node list | grep -c base_bridge` → **1** (nodes: `base_bridge`, `ekf_filter_node`, `mock_scan`, `robot_state_publisher`, `slam_toolbox`); `/scan` at **9.991 Hz**; `ros2 topic echo /map --once --field info` returns a **101 × 81 grid @ 0.05 m/cell** — slam_toolbox genuinely maps the synthetic room, so the mock nav chain is unblocked end to end.
+- **Risks/notes:** The scan is generated from a fixed room pose, not from the robot's mock odometry, so driving the mock robot does not slide the walls — mock SLAM/AMCL exercise plumbing and lifecycle, not localization accuracy. AMCL cannot converge in mock at all, since the synthetic rectangle and the shipped apartment map describe different rooms (see `BRINGUP_LADDER_ANALYSIS.md` §6). TC-23 can now be scripted against mock as well as real.
 
 #### GAP-17 — Speak action naming split
 
@@ -342,10 +381,11 @@ All paths are relative to the repository root; `…/src/` abbreviates `billiebot
 | GAP-18 | — (SYS-PLT-4 minor) | SYS-PLT-4 | — | — |
 | GAP-19 | — | doc-only | — | — |
 | GAP-20 | NAV-03 | SYS-NAV-1/2/3 | Rung 01 hardware verify (`verify_rung_01.sh`) after a plug-order swap | B-9 |
+| GAP-21 | NAV-02, NAV-05 | SYS-NAV-1/2 | Rung 05/06/14 mock verify (both lifecycle managers reach `Managed nodes are active`) | B-6 |
 
 ★ = proposed test defined in `MBSE_SYSTEM_DECOMPOSITION.md` §5.2 (TC-23…TC-30).
 
-Numbering history: GAP-1…10, 14, 16, 17 match the original 17-item design-vs-code discrepancy list from the 2026-07-04 exploration; the original #11 (dual `/dog/found`) → GAP-12, #12 (`/oak/rgb/preview`) → GAP-18, #13 (audio re-sort stub) → GAP-15, #15 (Pi naming) → GAP-19; GAP-11 (model_path) and GAP-13 (near-dog speed) were promoted from sub-findings to first-class gaps.
+Numbering history: GAP-1…10, 14, 16, 17 match the original 17-item design-vs-code discrepancy list from the 2026-07-04 exploration; the original #11 (dual `/dog/found`) → GAP-12, #12 (`/oak/rgb/preview`) → GAP-18, #13 (audio re-sort stub) → GAP-15, #15 (Pi naming) → GAP-19; GAP-11 (model_path) and GAP-13 (near-dog speed) were promoted from sub-findings to first-class gaps. GAP-20 and GAP-21 were promoted later from the bringup-ladder defect list (Appendix B-9 and B-6 respectively) — Appendix B items get a GAP number when they warrant a resolution sheet, and keep their B-number cross-reference.
 
 ### 5.2 Sponsor decisions needed (gate before the affected phase)
 
@@ -358,6 +398,6 @@ Numbering history: GAP-1…10, 14, 16, 17 match the original 17-item design-vs-c
 | D-5 | Stuck-detection numbers: relax SYS-NAV-4 to 0.5 m/10 s vs. tighten Nav2 progress checker to 5 s (MBSE PROP-04) | Phase B (TC-19 pass criteria) | (parameter of GAP-7 verification) |
 | D-6 | Alert channel design (MBSE PROP-01) — SAFE-mode "alert operator" has no mechanism; needed by GAP-7 step 5 and GAP-8's SAFE path | Phase B completeness | GAP-7 |
 
-*— End of plan. Update the §2 Status column as gaps close. —*
+*— End of plan. Update the §2 Status column, the sheet, the companion documents, and the GitHub issue as gaps close. —*
 
 
