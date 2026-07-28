@@ -513,7 +513,14 @@ jetson$ ~/billie-bot-claude/billiebot_ws/src/billiebot_bringup/scripts/install_u
 
 That installs `billiebot_bringup/udev/99-billiebot.rules` (the OAK-D permissions rule — Movidius VID `03e7`, `MODE="0666"`, without which `depthai` cannot claim the camera as a non-root user), reloads udev, and adds you to the `dialout` group for the serial ports. It also removes the hand-written `80-movidius.rules` if an earlier setup left one behind.
 
-Log out and back in for the group change. Plug in the Arduino, RPLidar, and OAK-D (OAK-D on a **USB 3** port with the supplied cable).
+Now log out and back in — a `dialout` group change only applies to a **new** login, and skipping this is the most common cause of "permission denied" on the serial ports:
+
+```bash
+jetson$ exit
+host$ ssh <you>@192.168.42.100
+```
+
+Plug in the Arduino, RPLidar, and OAK-D (OAK-D on a **USB 3** port with the supplied cable).
 
 **Verify:**
 
@@ -530,6 +537,8 @@ jetson$ ls -l /dev/serial/by-id/
 #   usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0   ← RPLidar A1
 #   usb-1a86_USB_Serial-if00-port0                                          ← Arduino Nano
 ```
+
+With all four checks passing, the devices are set up. **Next:** [`VERIFICATION.md`](VERIFICATION.md) rung 01 walks through the first real (non-mock) lidar bringup and the plug-order regression test that proves this setup is order-independent.
 
 > **On USB enumeration:** both serial devices are addressed by their `/dev/serial/by-id/` paths, so plug-in order and `ttyUSBn` numbering do not matter — swap the cables or reboot and both still come up (GAP-20). These symlinks are created automatically by systemd-udev's stock `60-serial.rules`; no rule of ours is involved. The one residual limitation: a by-id name is built from the USB vendor/product strings plus the serial number, and neither adapter contributes a unique one — the CP2102 reports Silicon Labs' factory-default serial `0001`, and the CH340 reports no serial at all. Each name is unique on this robot because there is exactly one of each chip. Add a *second* CP2102 or CH340 adapter and the names collide; the fix that day is `/dev/serial/by-path/`, which keys off the physical USB port position and is equally stock.
 
