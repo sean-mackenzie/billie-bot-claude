@@ -6,10 +6,18 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
     mock = LaunchConfiguration('mock')
+
+    # Port and scan settings live in config/lidar.yaml so the lidar follows the same
+    # convention as the Arduino (billiebot_base/config/base_driver.yaml): a stable
+    # /dev/serial/by-id/ path, not an enumeration-order ttyUSBn index (GAP-20).
+    lidar_config = os.path.join(
+        get_package_share_directory('billiebot_bringup'), 'config', 'lidar.yaml'
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument('mock', default_value='false'),
@@ -20,13 +28,7 @@ def generate_launch_description():
             package='rplidar_ros',
             executable='rplidar_node',
             name='rplidar_node',
-            parameters=[{
-                'serial_port': '/dev/ttyUSB1',
-                'serial_baudrate': 115200,
-                'frame_id': 'laser_frame',
-                'angle_compensate': True,
-                'scan_mode': 'Standard',
-            }],
+            parameters=[lidar_config],
             output='screen',
         ),
 

@@ -1,0 +1,18 @@
+# BillieBot udev rules -- install with scripts/install_udev_rules.sh
+#
+# OAK-D Lite (Luxonis, Movidius Myriad X). The depthai SDK claims the USB device
+# directly and cannot open it as a non-root user without this rule. The camera
+# re-enumerates as it boots its firmware and appears under more than one product ID,
+# so the rule matches on the vendor ID alone to cover every stage.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"
+
+# Deliberately NO symlink rules for the RPLidar A1 (Silicon Labs CP2102, vendor 10c4)
+# or the Arduino Nano (WCH CH340, vendor 1a86). Both are addressed by their stock
+# /dev/serial/by-id/ paths in billiebot_bringup/config/lidar.yaml and
+# billiebot_base/config/base_driver.yaml.
+#
+# A VID/PID symlink rule would key off the same USB descriptors that build the by-id
+# name, so it would carry an identical uniqueness guarantee -- it buys a prettier name
+# at the cost of a second naming convention plus a root install step. The by-id paths
+# are created automatically by systemd-udev's stock 60-serial.rules, with no rule to
+# install and nothing to forget after a reflash. See GAP-20.

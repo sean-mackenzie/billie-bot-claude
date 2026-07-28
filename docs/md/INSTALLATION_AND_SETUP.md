@@ -65,7 +65,7 @@ This guide takes you from zero installed software to (1) building and running th
 - **Build:** `colcon build --symlink-install` in `billiebot_ws/`.
 - **DDS:** CycloneDDS with a static peers list (`billiebot_bringup/config/cyclonedds.xml`) because Wi-Fi multicast is unreliable.
 - **Hardware-free development:** every launch file accepts `mock:=true`. There is no Gazebo simulation; mock mode *is* the sim story.
-- **Not in the repo, installed by this guide:** the `rplidar_ros` driver, ~15 pip packages (there is no `requirements.txt`), two ML model files (YAMNet `.tflite`, YOLOv8n `.blob`), ALSA/udev/I²C system configuration, and the `/var/lib/billiebot` data directories.
+- **Not in the repo, installed by this guide:** the `rplidar_ros` driver, ~15 pip packages (there is no `requirements.txt`), two ML model files (YAMNet `.tflite`, YOLOv8n `.blob`), ALSA/I²C system configuration, and the `/var/lib/billiebot` data directories. (The Jetson's udev rule *is* in the repo — `billiebot_bringup/udev/99-billiebot.rules`, applied by `scripts/install_udev_rules.sh`.)
 
 ### 0.3 What you need before starting
 
@@ -487,34 +487,7 @@ jetson$ pip3 install pyserial numpy depthai pyyaml
 
 **Verify:** `source /opt/ros/humble/setup.bash && ros2 pkg prefix rplidar_ros` prints `/opt/ros/humble`.
 
-### 2.2.3 Device access (serial + OAK-D)
-
-```bash
-# Serial devices (Arduino + RPLidar):
-jetson$ sudo usermod -aG dialout $USER
-
-# OAK-D Lite udev rule (Movidius VID 03e7):
-jetson$ echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' \
-        | sudo tee /etc/udev/rules.d/80-movidius.rules
-jetson$ sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-Log out and back in for the group change. Plug in the Arduino, RPLidar, and OAK-D (OAK-D on a **USB 3** port with the supplied cable).
-
-**Verify:**
-
-```bash
-jetson$ ls /dev/serial/by-id/
-# expect: usb-1a86_USB_Serial-if00-port0   ← the Arduino (matches billiebot_base/config/base_driver.yaml)
-jetson$ ls /dev/ttyUSB*
-# the RPLidar is expected at /dev/ttyUSB1 by 01_lidar.launch.py — see the caveat below
-jetson$ python3 -c "import depthai as dai; print(dai.Device.getAllAvailableDevices())"
-# expect a non-empty list with the OAK-D
-```
-
-> ⚠️ **USB enumeration caveat:** `01_lidar.launch.py` hardcodes the lidar at `/dev/ttyUSB1` (115200 baud). The Arduino is addressed by its stable `/dev/serial/by-id/...` path, but plain `ttyUSB` numbering depends on plug-in order. If the lidar lands on `ttyUSB0`, either swap plug-in order or add a udev symlink rule — and note this as a candidate code fix (use a by-id path for the lidar too).
-
-### 2.2.4 Clone, build, configure
+### 2.2.3 Clone, build, configure
 
 ```bash
 jetson$ git clone https://github.com/sean-mackenzie/billie-bot-claude.git ~/billie-bot-claude
@@ -528,7 +501,37 @@ jetson$ echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> ~/.bashrc
 
 Install the **YOLOv8n blob** for the OAK-D ([Appendix B](#appendix-b--ml-model-assets)) and set its path in `billiebot_ws/src/billiebot_perception/config/perception.yaml` (`oakd_dog_detector → model_path`). The parameter ships empty; in real (non-mock) mode the node logs an error without it.
 
-**Verify:** `ros2 launch billiebot_bringup jetson.launch.py mock:=true` starts Nav2, the OAK-D detector, dog locator, and mission nodes (rungs 06–08 + 13, which chain-include base/lidar/EKF/AMCL) with no crash loops. Then re-run without `mock:=true` once hardware is attached.
+**Verify:** `ros2 launch billiebot_bringup jetson.launch.py mock:=true` starts Nav2, the OAK-D detector, dog locator, and mission nodes (rungs 06–08 + 13, which chain-include base/lidar/EKF/AMCL) with no crash loops. Then re-run without `mock:=true` once §2.2.4 is done and the hardware is attached.
+
+### 2.2.4 Device access (serial + OAK-D)
+
+This comes after the clone because the udev rule and the preflight check are version-controlled in the repo, not typed in by hand.
+
+```bash
+jetson$ ~/billie-bot-claude/billiebot_ws/src/billiebot_bringup/scripts/install_udev_rules.sh
+```
+
+That installs `billiebot_bringup/udev/99-billiebot.rules` (the OAK-D permissions rule — Movidius VID `03e7`, `MODE="0666"`, without which `depthai` cannot claim the camera as a non-root user), reloads udev, and adds you to the `dialout` group for the serial ports. It also removes the hand-written `80-movidius.rules` if an earlier setup left one behind.
+
+Log out and back in for the group change. Plug in the Arduino, RPLidar, and OAK-D (OAK-D on a **USB 3** port with the supplied cable).
+
+**Verify:**
+
+```bash
+jetson$ ros2 run billiebot_bringup check_devices.sh
+# expect [PASS] for the RPLidar, the Arduino, dialout membership, and the OAK-D
+```
+
+`check_devices.sh` reads the expected serial paths out of the configs themselves — `billiebot_bringup/config/lidar.yaml` and `billiebot_base/config/base_driver.yaml` — so it always checks exactly what the launch files will open. To see the raw enumeration:
+
+```bash
+jetson$ ls -l /dev/serial/by-id/
+# expect both, each a symlink to some ../../ttyUSBn:
+#   usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0   ← RPLidar A1
+#   usb-1a86_USB_Serial-if00-port0                                          ← Arduino Nano
+```
+
+> **On USB enumeration:** both serial devices are addressed by their `/dev/serial/by-id/` paths, so plug-in order and `ttyUSBn` numbering do not matter — swap the cables or reboot and both still come up (GAP-20). These symlinks are created automatically by systemd-udev's stock `60-serial.rules`; no rule of ours is involved. The one residual limitation: a by-id name is built from the USB vendor/product strings plus the serial number, and neither adapter contributes a unique one — the CP2102 reports Silicon Labs' factory-default serial `0001`, and the CH340 reports no serial at all. Each name is unique on this robot because there is exactly one of each chip. Add a *second* CP2102 or CH340 adapter and the names collide; the fix that day is `/dev/serial/by-path/`, which keys off the physical USB port position and is equally stock.
 
 ## 2.3 Raspberry Pi
 
@@ -771,7 +774,7 @@ No `requirements.txt` or dependency lockfile exists in the repo; this appendix i
 | `/var/lib/billiebot/{snapshots,reports}` + SQLite DB path | Pi (and Mac container) | from `billiebot_cognition/config/cognition.yaml`; create before rung 12 |
 | `dialout` group | Jetson | Arduino + RPLidar serial |
 | `i2c`, `audio`, `video` groups; I²C enabled; `dtparam=audio=off` + I²S DAC overlay | Pi | MLX90640, ReSpeaker, MAX98357A |
-| udev rule VID `03e7` MODE 0666 | Jetson | OAK-D Lite |
+| `billiebot_bringup/udev/99-billiebot.rules` (VID `03e7` MODE 0666), installed by `scripts/install_udev_rules.sh` | Jetson | OAK-D Lite |
 | DHCP reservations + `cyclonedds.xml` peers + `RMW_IMPLEMENTATION` export | Jetson, Pi, (Mac) | §2.1 |
 
 # Appendix B — ML model assets
@@ -821,8 +824,9 @@ The detector creates a `YoloSpatialDetectionNetwork` with a **416×416** preview
 | Machines can't see each other's topics | `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` not exported (launch files only set `CYCLONEDDS_URI`); or IPs in `cyclonedds.xml` don't match reality; or you edited the source XML but didn't rebuild (the launch files read the **installed** copy). |
 | `ros2 topic list` differs between shells on one machine | One shell hasn't sourced `install/setup.bash`, or has a different `ROS_DOMAIN_ID`/`RMW_IMPLEMENTATION`. `ros2 daemon stop` after changing env vars. |
 | `serial.SerialException: Permission denied` | User not in `dialout` (Jetson) — re-login after `usermod`. |
-| Lidar fails to open port | Enumeration swap: lidar expected at `/dev/ttyUSB1` by `01_lidar.launch.py`. Check `ls -l /dev/serial/by-id/`, replug in the right order, or add a udev symlink. |
-| `depthai` raises `X_LINK_DEVICE_NOT_FOUND` | Missing udev rule (§2.2.3), USB-2 cable/port, or insufficient power. Replug after `udevadm trigger`. |
+| `rplidar_node` dies with `*** buffer overflow detected ***` | Upstream `rplidar_ros` 2.0.0 aborts this way instead of printing a readable error when it cannot open the serial port — the message is a red herring, the port is simply missing. Run `ros2 run billiebot_bringup check_devices.sh` to find out why. |
+| Lidar fails to open port | Run `ros2 run billiebot_bringup check_devices.sh`. The lidar is addressed by the by-id path in `billiebot_bringup/config/lidar.yaml`, so this is not an enumeration-order problem — the symlink is missing (unplugged/unpowered), or the adapter reports a different name than the config expects. Compare `ls -l /dev/serial/by-id/` against the config value. |
+| `depthai` raises `X_LINK_DEVICE_NOT_FOUND` | Missing udev rule (§2.2.4 — run `scripts/install_udev_rules.sh`), USB-2 cable/port, or insufficient power. Replug after `udevadm trigger`. |
 | `aplay: audio open error: Device or resource busy` / wrong output | The I²S DAC must be **card 0** (`plughw:0,0` is hardcoded in `speaker_node`): set `dtparam=audio=off` and the DAC overlay, reboot, confirm with `aplay -l`. |
 | YAMNet node logs "No model_path specified" | Expected until Appendix B is done; harmless in mock mode. |
 | OAK-D node logs "No model_path specified" in real mode | Set the blob path (Appendix B). |
@@ -840,6 +844,6 @@ The detector creates a `YoloSpatialDetectionNetwork` with a **416×416** preview
 | **`osrf/ros:humble-desktop` is amd64-only** | Checked against the Docker Hub API on 2026-07-05. This guide uses multi-arch `ros:humble` + apt desktop tools instead. |
 | **Launch files set `CYCLONEDDS_URI` but not `RMW_IMPLEMENTATION`** | `jetson.launch.py` / `pi.launch.py` point at the CycloneDDS config, but selecting the CycloneDDS RMW is left to the environment — this guide exports it in `~/.bashrc`/Dockerfiles. Candidate code fix: add `SetEnvironmentVariable('RMW_IMPLEMENTATION', …)` to those launch files. |
 | **`rplidar_ros` undeclared** | Used by `01_lidar.launch.py` but absent from every `package.xml`, so `rosdep install` won't pull it. Installed explicitly by this guide. Candidate fix: add `<exec_depend>rplidar_ros</exec_depend>` to `billiebot_bringup`. |
-| **Lidar port hardcoded** | `/dev/ttyUSB1` @ 115200 in `01_lidar.launch.py`; fragile vs. USB enumeration. Candidate fix: use a `/dev/serial/by-id/...` path like the base bridge does. |
+| **Lidar port hardcoded** | **Resolved (GAP-20, 2026-07-28):** the lidar's port moved out of `01_lidar.launch.py` into `billiebot_bringup/config/lidar.yaml` and now uses the stable `/dev/serial/by-id/...` CP2102 path, matching `base_driver.yaml`. Plug-in order no longer matters (§2.2.4). Tracked in `docs/md/DISCREPANCY_RESOLUTION_PLAN.md`. |
 | **No IMU for MVP** | `use_imu: false` in `base_driver.yaml` until the A4/A5 encoder rewire (`docs/MEASURE_ME.md`); the BNO055 firmware extension in `firmware/README.md` is deferred accordingly. |
 | **NoIR-in-container** | `picamera2` doesn't install cleanly in an Ubuntu 22.04 container on Pi OS; run rung 10 mocked until resolved (§2.3.3). |

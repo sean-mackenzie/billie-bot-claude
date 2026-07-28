@@ -12,6 +12,8 @@ source install/setup.bash
 
 Each rung builds on the previous. Use `mock:=true` for hardware-free testing.
 
+**On hardware (skip for `mock:=true`):** run the device preflight first — `ros2 run billiebot_bringup check_devices.sh` should report `[PASS]` for the RPLidar, the Arduino, `dialout` membership, and the OAK-D. Jetson device setup is in `INSTALLATION_AND_SETUP.md` §2.2.4.
+
 ### Rung 01: Lidar
 ```bash
 ros2 launch billiebot_bringup 01_lidar.launch.py mock:=true
