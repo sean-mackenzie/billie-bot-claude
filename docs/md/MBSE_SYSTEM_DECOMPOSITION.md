@@ -214,7 +214,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 | NAV-01 | The navigation subsystem shall build a 2-D occupancy grid at 0.05 m resolution from `/scan` using online asynchronous SLAM with loop closure (Ceres pose-graph backend, 12 m max laser range). | SYS-NAV-1 | D | ACT-08 a5; IBD-03 blk slam | ✅ | `billiebot_navigation/config/slam_toolbox_params.yaml` |
 | NAV-02 | The navigation subsystem shall persist the map to disk (YAML+PGM) and reload it via `map_server` for localization runs. | SYS-NAV-1 | D | ACT-08 a6; IBD-03 blk map_server | ✅ | `slam_toolbox` save services; `localization.launch.py` |
 | NAV-03 | The lidar driver shall publish `sensor_msgs/LaserScan` on `/scan` in frame `laser_frame` (RPLidar A1, 115200 baud, angle-compensated), addressed by a stable device path. | SYS-NAV-1/2/3 | T | IBD-01 c1; IBD-03 c5; ACT-08 a2 | ✅ | `01_lidar.launch.py` (real branch) + `billiebot_bringup/config/lidar.yaml` (by-id port, GAP-20) |
-| NAV-04 | A mock scan source shall exist so rungs 01/04/05/06 are exercisable without hardware. | SYS-PLT-4 (testability) | D | ACT-08 **[GAP-16]** | ❌ | mock branch launches a `base_bridge` stub with no `/scan` publisher |
+| NAV-04 | A mock scan source shall exist so rungs 01/04/05/06 are exercisable without hardware. | SYS-PLT-4 (testability) | D | ACT-08 | ✅ | `billiebot_base/mock_scan.py` — synthetic `LaserScan` at 10 Hz (GAP-16 resolved 2026-07-28) |
 | NAV-05 | The localization subsystem shall estimate map-frame pose with AMCL (500–2000 particles, likelihood-field model, differential motion model) and broadcast the `map→odom` transform; mean position error ≤ 0.15 m against surveyed ground truth. | SYS-NAV-2 | T | ACT-08 a7–a9; IBD-04 | ⬜ | `config/amcl_params.yaml`; quantitative test pending HW |
 | NAV-06 | The state-estimation subsystem shall fuse wheel odometry (and IMU when enabled) in a 30 Hz planar EKF publishing `/odometry/filtered`. | SYS-NAV-2 | T | ACT-06 a11; IBD-03 blk ekf **[GAP-2]** | 🟡 | `config/ekf.yaml`; `imu0` block commented out pending A4/A5 rewire |
 | NAV-07 | Exactly one component shall broadcast the `odom→base_link` transform at any time. | SYS-NAV-2 (derived, new) | T | IBD-04 note | ✅ | EKF sole broadcaster: `base_driver.yaml` `publish_tf` default `false` (rung-02 bench override via launch arg) and rung 06 starts a single `ekf_filter_node`; GAP-5/GAP-6 resolved 2026-07-17 |
@@ -321,7 +321,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 | PLT-03 | Battery thresholds shall be 10.5 V (3.5 V/cell, LOW → SAFE entry) and 9.9 V (3.3 V/cell, CRITICAL / documented hard cutoff). | SYS-PLT-2 | T | ACT-05 d2; TC-05 | ✅ | `base_driver.yaml`, `mission.yaml` (`battery_safe_voltage`) |
 | PLT-04 | On SAFE entry due to battery, the system shall stop motion, alert the operator, and request pickup. | SYS-PLT-2 | D | ACT-05 a10 **[GAP: alert unimplemented]** | 🟡 | mode transition exists; no alert/notification channel |
 | PLT-05 | The operator teleop surface shall be `/cmd_vel` (Twist) plus `/e_stop`, reachable from the host over Wi-Fi/DDS. | SYS-PLT-4 | D | IBD-00 c2; TC-06 | ✅ | standard tools (`teleop_twist_keyboard`); no bespoke node needed |
-| PLT-06 | Every bringup rung shall be runnable hardware-free (`mock:=true`) with mock fidelity sufficient to exercise the rung's verify criteria. | SYS-PLT-4 (testability) | D | ACT-08; verify scripts | 🟡 | rung 01 mock produces no `/scan` **[GAP-16]**; mock battery constant 12.58 V blocks SAFE-path testing |
+| PLT-06 | Every bringup rung shall be runnable hardware-free (`mock:=true`) with mock fidelity sufficient to exercise the rung's verify criteria. | SYS-PLT-4 (testability) | D | ACT-08; verify scripts | 🟡 | rung 01 mock `/scan` now real (GAP-16 resolved); mock battery constant 12.58 V still blocks SAFE-path testing, and mock AMCL cannot converge (synthetic room ≠ shipped map) |
 | PLT-07 | Endurance shall be ≥ 60 min continuous patrol per charge (design power budget ≈ 33–40 W on a 44 Wh pack). | SYS-PLT-1 | A,T | design §4.2 rollup; soak test | ⬜ | analysis only; HW soak pending |
 | PLT-08 | Power branches shall be individually fused with motor and compute rails separated at the distribution bus, per IBD-02. | SYS-PLT-3 | I | IBD-02 | ⬜ | HW inspection; modeled in §3.7 |
 | PLT-09 | Each bringup rung shall have an automated verify script asserting its measurable outputs. | SYS-PLT-4 (testability) | T | verify_rung_*.sh | 🟡 | scripts exist for rungs 01/02/03/06/07/12 only |
@@ -549,7 +549,7 @@ The authoritative as-intended ROS graph. Parts are `«rosNode»` blocks allocate
 | c2 | `/odom` | `nav_msgs/Odometry` | **base_bridge** → ekf_filter_node | 30 Hz | sole consumer is the EKF since GAP-4 resolution (2026-07-17) |
 | c3 | `/joint_states` | `sensor_msgs/JointState` | **base_bridge** → robot_state_publisher | 30 Hz | wheel TF |
 | c4 | `/battery_state` | `sensor_msgs/BatteryState` | **base_bridge** → **mission_controller** | 1 Hz | SAFE-mode input |
-| c5 | `/scan` | `sensor_msgs/LaserScan` | rplidar_node → slam_toolbox ∥ amcl, both costmaps | ~5.5–8 Hz | no mock source **[GAP-16]** |
+| c5 | `/scan` | `sensor_msgs/LaserScan` | rplidar_node → slam_toolbox ∥ amcl, both costmaps | ~5.5–8 Hz real; 10 Hz mock | mock source is `mock_scan` (GAP-16 resolved) |
 | c6 | `/odometry/filtered` | `nav_msgs/Odometry` | ekf_filter_node → bt_navigator, controller_server | 30 Hz | Nav2's odometry source since GAP-4 resolution (2026-07-17) |
 | c7 | `/dog/detections_3d` | `DogDetection3D` | **oakd_dog_detector** → **dog_locator**, **state_fusion** | 5 Hz | |
 | c8 | `/dog/pose_map` | `geometry_msgs/PoseStamped` | **dog_locator** → **state_fusion**, **approach_dog_server** | ≤ 5 Hz | map-frame dog pose |
@@ -978,7 +978,7 @@ flowchart TD
 | ID | Kind | Specification | Partition |
 |---|---|---|---|
 | a1 | action | `SetDDSConfig` — `CYCLONEDDS_URI` → cyclonedds.xml (multicast off, peers .100/.101); launch `jetson.launch.py` / `pi.launch.py` | both |
-| a2 | action | `StartDrivers` — rplidar (`/scan`), base_bridge (serial connect, `r` reset) — mock branch **[GAP-16: no mock /scan]** | Jetson |
+| a2 | action | `StartDrivers` — rplidar (`/scan`), base_bridge (serial connect, `r` reset); mock branch substitutes `mock_scan` (GAP-16 resolved) | Jetson |
 | a3 | action | `StartDescription` — robot_state_publisher: `/robot_description`, `/tf_static` sensor frames | Jetson |
 | a4 | action | `StartEKF` (single instance — rung 03's `ekf_filter_node`; GAP-6 resolved) | Jetson |
 | d1 | decision | [mapping session?] → a5; [localization session?] → a7 | Operator |
@@ -991,7 +991,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A1["a1 set CYCLONEDDS_URI, launch per host"] --> A2["a2 drivers: lidar + base - GAP-16 mock scan missing"]
+    A1["a1 set CYCLONEDDS_URI, launch per host"] --> A2["a2 drivers: lidar + base - mock uses mock_scan"]
     A2 --> A3["a3 robot_state_publisher TF static"]
     A3 --> A4["a4 EKF single instance - GAP-6 resolved"]
     A4 --> D1{"d1 mapping or localization?"}
@@ -1109,11 +1109,12 @@ Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code 
 | GAP-13 | No near-dog speed restriction: no speed-filter/keepout costmap layer fed by `/dog/pose_map`; only ApproachDog's own goals are capped | NAV-12, SYS-NAV-5 | F |
 | GAP-14 | Firmware watchdog `AUTO_STOP_INTERVAL` fixed to 500 ms and flashed/bench-verified (TC-29) — **Resolved 2026-07-11** | MOB-05, SYS-PLT-5 | F (done) |
 | GAP-15 | Audio-DoA response is a log statement: no INVESTIGATE entry, no queue re-sort | MSN-04, SYS-FND-2 | F |
-| GAP-16 | Rung 01 mock branch launches a base_bridge stub — no mock `/scan`; SLAM/AMCL/costmap rungs unexercisable in mock | NAV-04, PLT-06 | F (dedicated mock scan publisher) |
+| GAP-16 | Rung 01 mock branch launched a base_bridge stub — no mock `/scan`; SLAM/AMCL/costmap rungs unexercisable in mock — **Resolved 2026-07-28**, `billiebot_base/mock_scan.py` publishes a synthetic `LaserScan` at 10 Hz and the duplicate `base_bridge` is gone | NAV-04, PLT-06 | F (done) |
 | GAP-17 | Speak action naming split: `/speak` (speaker_node) vs `/mission/speak` (wrapper); BT XML `Speak` id binds to neither | AUD-06 | F (canonical name) or M |
 | GAP-18 | `/oak/rgb/preview` in design §5.2 but not published (operator visualization) | SYS-PLT-4 (minor) | M or F |
 | GAP-19 | Host naming drift: design says Pi 5; configs/README say Pi 4 — **Resolved 2026-07-12**, all references aligned to Raspberry Pi 5 | documentation only | M |
 | GAP-20 | Lidar addressed by raw `/dev/ttyUSB1` while the Arduino used a by-id path — USB enumeration order could swap them — **Resolved 2026-07-28**, lidar params moved to `billiebot_bringup/config/lidar.yaml` on the stable CP2102 by-id path | NAV-03 | P (done) |
+| GAP-21 | Empty `map` launch default silently disabled localization: `map_server` never configured, AMCL waited forever, Nav2 never activated — **Resolved 2026-07-28**, the bundled apartment map is documented and every operational command in the guides passes `map:=`; the launch default stays empty by design | NAV-02, NAV-05 | M (done) |
 
 ---
 

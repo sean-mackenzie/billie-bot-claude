@@ -1,8 +1,24 @@
 # BillieBot Bringup Ladder — Systems Decomposition & Analysis
 
 **Author role:** Senior Systems Engineer decomposition
-**Sources:** Static analysis of `docs/VERIFICATION.md`, all launch files, node sources, configuration files, interface definitions, and `BillieBot_System_Design.md` (source document of `BillieBot_System_Design.md.pdf`). No code was executed or modified to produce this report.
-**Date:** 2026-07-03
+**Sources:** `docs/VERIFICATION.md`, all launch files, node sources, configuration files, interface definitions, and `BillieBot_System_Design.md` (source document of `BillieBot_System_Design.md.pdf`).
+**Originally written:** 2026-07-03 (by static analysis only — no code was executed to produce the first revision)
+**Last reviewed:** 2026-07-28
+
+> **This is a living document, not a historical snapshot.** Appendix B is the register of record for
+> bringup-ladder defects; entries are struck through and marked resolved as they close, and the
+> per-rung sections are corrected alongside them so no section describes behavior the code no longer
+> has. When you close an item here, also update `DISCREPANCY_RESOLUTION_PLAN.md` (§2 table + sheet)
+> and `MBSE_SYSTEM_DECOMPOSITION.md` (§5.4 register) in the same PR.
+
+### Revision log
+
+| Date | Change |
+|---|---|
+| 2026-07-03 | Initial decomposition of rungs 01–14; Appendix B raised B-1…B-20 |
+| 2026-07-17 | B-3, B-4, B-8 resolved (GAP-5, GAP-6, GAP-4) |
+| 2026-07-28 | B-9 resolved (GAP-20, lidar by-id path) |
+| 2026-07-28 | B-1, B-2 resolved (GAP-16 — `mock_scan` node) and B-13 resolved (tf2 registration import); B-6 resolved (GAP-21 — documented bundled map). Rung 01/05/06/14 sections corrected to match; verified by running the mock ladder rather than by re-reading source |
 
 ---
 
@@ -37,7 +53,7 @@ Every rung (except 08 and 12) accepts a `mock:=true` launch argument that substi
 Rungs compose **transitively** — launching rung N brings up (most of) the rungs below it. Several integration defects identified in Appendix B arise directly from double-inclusion in this graph.
 
 ```
-14_full_bringup ─┬─► 06_nav2 ─┬─► 05_amcl ─┬─► 01_lidar                (rplidar OR mock stub)
+14_full_bringup ─┬─► 06_nav2 ─┬─► 05_amcl ─┬─► 01_lidar                (rplidar OR mock_scan)
                  │            │            ├─► 03_ekf ──► 02_base ─┬─► description.launch.py (robot_state_publisher)
                  │            │            │        │              └─► base.launch.py (base_bridge)
                  │            │            │        └─► ekf_node (robot_localization)
@@ -61,7 +77,7 @@ Rungs compose **transitively** — launching rung N brings up (most of) the rung
                                                              mapping and localization are alternatives]
 ```
 
-Note the standing duplication visible in this graph: in mock mode, `01_lidar` launches a **second `base_bridge` instance** (named `mock_lidar_stub`), and rungs 04/05/06/14 include both `01` and the `03→02` chain. (A second duplication — rung 06 starting two `ekf_filter_node`s via `navigation.launch.py` — was resolved 2026-07-17, GAP-6.) See Appendix B.
+Two duplications that this graph used to expose are now closed: in mock mode `01_lidar` once launched a **second `base_bridge` instance** (named `mock_lidar_stub`) alongside the `03→02` chain — resolved 2026-07-28 (GAP-16), the mock branch now launches the dedicated `mock_scan` node — and rung 06 once started two `ekf_filter_node`s via `navigation.launch.py` — resolved 2026-07-17 (GAP-6). See Appendix B.
 
 ### 1.3 Per-rung template
 
@@ -80,7 +96,8 @@ ros2 launch billiebot_bringup 01_lidar.launch.py mock:=true
 | File | Role |
 |---|---|
 | `billiebot_bringup/launch/01_lidar.launch.py` | Rung entry point; selects real vs. mock via `IfCondition`/`UnlessCondition` |
-| `billiebot_base/billiebot_base/base_bridge.py` | **Mock branch only** — launched as node `mock_lidar_stub` (placeholder; see §2.3) |
+| `billiebot_base/billiebot_base/mock_scan.py` | **Mock branch only** — synthetic `/scan` publisher (see §2.3) |
+| `billiebot_bringup/config/lidar.yaml` | **Real branch only** — serial by-id path, baud, scan mode (GAP-20) |
 | `billiebot_bringup/scripts/verify_rung_01.sh` | Verification script (topic existence + `ros2 topic hz`) |
 | External: `rplidar_ros` package (`rplidar_node`) | Real lidar driver *(external dependency)* |
 
@@ -105,28 +122,23 @@ ros2 launch billiebot_bringup 01_lidar.launch.py mock:=true
 
 No TF is produced by this rung. `/scan` messages carry `frame_id: laser_frame`, which is **unresolvable** until rung 02 brings up `robot_state_publisher` (the `chassis → laser_frame` static transform lives in the URDF). Standalone RViz viewing requires setting the fixed frame to `laser_frame`.
 
-**Mock mode** — one node, and this is the ladder's most significant defect:
+**Mock mode** — one node, a purpose-built synthetic lidar (**resolved 2026-07-28, GAP-16**; this rung was previously the ladder's most significant defect):
 
-The mock branch launches `billiebot_base`'s `base_bridge` executable under the name `mock_lidar_stub` with `mock: true`. The launch file's own comment concedes: *"In practice, a dedicated mock scan publisher would be better. For now, this is a placeholder."* `base_bridge` contains **no `/scan` publisher whatsoever**. In mock mode this rung actually produces:
+The mock branch launches `billiebot_base`'s `mock_scan` executable, which publishes a synthetic `LaserScan` describing a rectangular room (`NUM_SAMPLES = 360`, `ROOM_HALF_X = 2.5 m`, `ROOM_HALF_Y = 2.0 m`, with per-beam noise). It replaced a `base_bridge` instance named `mock_lidar_stub` that published no `/scan` at all — the origin of Appendix B-1 and B-2.
 
-| Node | Pub/Srv | Type | Rate |
+| Node | Pub | Type | Rate |
 |---|---|---|---|
-| `mock_lidar_stub` (a `base_bridge` instance) | `/odom` | `nav_msgs/Odometry` | 30 Hz |
-| | `/joint_states` | `sensor_msgs/JointState` | 30 Hz |
-| | `/battery_state` | `sensor_msgs/BatteryState` | 1 Hz (constant ≈12.58 V from simulated ADC) |
-| | TF `odom → base_link` | `tf2_msgs/TFMessage` | 30 Hz |
-| | `/e_stop` | `billiebot_interfaces/srv/EStop` | service |
-| | `/cmd_vel` (sub) | `geometry_msgs/Twist` | — |
+| `mock_scan` | `/scan` | `sensor_msgs/LaserScan` | 10 Hz, `frame_id: laser_frame` |
 
-Consequences: (a) the rung's own verify criterion (`/scan` publishing) **cannot pass in mock mode**; (b) every higher rung that includes 01 in mock mode gains a duplicate base-bridge (Appendix B-1, B-2).
+Consequences of the fix: the rung's own verify criterion passes in mock, higher rungs no longer gain a duplicate `base_bridge`, and mock SLAM/AMCL/costmaps receive real scan data. Measured 2026-07-28 in the `billiebot-dev` container: `/scan` at **10.008 Hz**, `verify_rung_01.sh` **`[PASS]` ×2**, `ros2 node list` shows `/mock_scan` alone.
 
 ### 2.4 Measurable outputs
 
 | Output | Measurement | Expected (real) | Expected (mock) |
 |---|---|---|---|
-| `/scan` exists & publishes | `ros2 topic echo /scan --once`; `ros2 topic hz /scan` | LaserScan at ~5.5–8 Hz, 360° ranges 0.15–12 m | **Absent** (defect) |
-| Scan geometry sane | RViz LaserScan display, fixed frame `laser_frame` | Room outline visible; motor audibly spinning (physical) | n/a |
-| Script result | `./scripts/verify_rung_01.sh` | `[PASS]` ×2, exit 0 | `[FAIL] /scan not found`, exit 1 |
+| `/scan` exists & publishes | `ros2 topic echo /scan --once`; `ros2 topic hz /scan` | LaserScan at ~5.5–8 Hz, 360° ranges 0.15–12 m | LaserScan at 10 Hz (observed 10.008 Hz) |
+| Scan geometry sane | RViz LaserScan display, fixed frame `laser_frame` | Room outline visible; motor audibly spinning (physical) | Synthetic 5.0 × 4.0 m rectangle |
+| Script result | `./scripts/verify_rung_01.sh` | `[PASS]` ×2, exit 0 | `[PASS]` ×2, exit 0 |
 
 The verify script checks topic existence via `ros2 topic info` and then rate via `timeout 5 ros2 topic hz` — it validates *liveness*, not scan content or field ranges.
 
@@ -137,7 +149,7 @@ The verify script checks topic existence via `ros2 topic info` and then rate via
 | **SYS-NAV-1** (lidar SLAM map) | **Prerequisite.** `/scan` is the sole input to `slam_toolbox` (rung 04) and AMCL (rung 05). Rung 01 alone doesn't satisfy it, but SYS-NAV-1 is unreachable without it. |
 | **SYS-NAV-2, SYS-NAV-3** | Prerequisite — `/scan` drives AMCL localization and both Nav2 costmap obstacle layers (`nav2_params.yaml` `observation_sources: scan`). |
 | Design §3.4 BDD-03 | The lidar is modeled under the Perception Subsystem with data allocated to Nav — rung 01 verifies the physical `lidar → jet` USB/UART item flow of IBD-01. |
-| TC coverage | No dedicated TC; TC-02…TC-06 begin at rung 02. **Could** satisfy a lidar-liveness test if the mock stub were replaced with a real synthetic `/scan` publisher — recommended (Appendix B-1). |
+| TC coverage | No dedicated TC; TC-02…TC-06 begin at rung 02. Now satisfies a lidar-liveness test in mock as well as real, since `mock_scan` publishes a genuine `/scan` (Appendix B-1, resolved) — the proposed TC-23 can be scripted against either mode. |
 
 ---
 
@@ -362,9 +374,9 @@ Everything from rungs 01+02+03, plus:
 | | TF `map → odom` | broadcast | | 50 Hz |
 | | `/slam_toolbox/save_map`, `/slam_toolbox/serialize_map` etc. | services | `slam_toolbox` srvs | on demand *(standard slam_toolbox interface — inference)* |
 
-**Composition caveats (mock):**
-1. `/scan` never appears (rung 01 defect) → `slam_toolbox` idles; **no `/map` is produced**. VERIFICATION.md itself concedes this: "*requires real lidar data*". In mock mode this rung verifies only process liveness.
-2. `04 → 01(mock)` launches `mock_lidar_stub` (a base_bridge) **and** `04 → 03 → 02` launches the real `base_bridge` — two instances of the same executable publishing `/odom`, `/joint_states`, `/battery_state`, and `odom→base_link` TF simultaneously, plus two `/e_stop` servers (Appendix B-2). Combined with the EKF broadcast, **three** publishers contend for `odom → base_link`.
+**Composition in mock (both former caveats resolved 2026-07-28, GAP-16):**
+1. `/scan` is published by `mock_scan`, so `slam_toolbox` scan-matches and **does** produce a `/map` in mock. Observed 2026-07-28 in the `billiebot-dev` container: `/map` present at 101 × 81 cells @ 0.05 m/cell, `/scan` at 9.991 Hz. The map is of the synthetic rectangle, so it exercises the plumbing — it is not a map of anywhere real.
+2. `04 → 01(mock)` now launches `mock_scan` rather than a second `base_bridge`, so exactly one `base_bridge` runs (from `04 → 03 → 02`). Verified: `ros2 node list | grep -c base_bridge` → **1**. With GAP-5/GAP-6 also closed, the EKF is the single `odom → base_link` broadcaster.
 
 **Real-mode data flow:** teleoperate the robot (operator publishes `/cmd_vel`, per Build Phase 2 of the design) → wheel odometry + EKF hold the `odom` frame → `slam_toolbox` scan-matches `/scan` against the growing pose graph → publishes `/map` and the `map → odom` correction.
 
@@ -392,10 +404,11 @@ Everything from rungs 01+02+03, plus:
 ## 6. Rung 05 — AMCL Localization
 
 ```bash
-ros2 launch billiebot_bringup 05_amcl.launch.py map:=/path/to/map.yaml
+ros2 launch billiebot_bringup 05_amcl.launch.py mock:=true \
+  map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
 ```
 
-(Note: VERIFICATION.md shows no `mock:=true` for this rung — it presumes a real map and real lidar.)
+(VERIFICATION.md now shows this rung with both arguments. `map:=` is required in either mode — see Appendix B-6 / GAP-21; `mock:=true` is what lets the rung run without the real lidar and Arduino.)
 
 ### 6.1 Referenced files
 
@@ -412,7 +425,7 @@ ros2 launch billiebot_bringup 05_amcl.launch.py map:=/path/to/map.yaml
 
 | Parameter | Value | Significance |
 |---|---|---|
-| `map` (launch arg) | default `''` | **Required.** With the empty default, `map_server` has no `yaml_filename` and its lifecycle *configure* fails; the lifecycle manager cannot reach *active* — the rung silently does nothing useful (Appendix B-6) |
+| `map` (launch arg) | default `''` | **Required — the empty default is deliberate** (the map is a deployment choice, not something the launch file should pick). With it unset, `map_server` has no `yaml_filename`, its lifecycle *configure* fails, and the lifecycle manager never reaches *active* — the rung silently does nothing useful. The repo ships `billiebot_navigation/maps/my_apartment_v1.yaml` for this purpose and the guides now pass it explicitly (Appendix B-6, resolved 2026-07-28 / GAP-21) |
 | `min_particles` / `max_particles` | 500 / 2000 | Filter size, apartment-appropriate |
 | `laser_model_type` | `likelihood_field` | Standard indoor model; `max_beams: 60` subsampling |
 | `laser_min_range` / `laser_max_range` | 0.15 / 12.0 m | Matches A1 |
@@ -438,7 +451,7 @@ Everything from rungs 01+02+03 (real lidar assumed), plus three lifecycle-manage
 
 **Full TF chain now:** `map →(amcl) odom →(base_bridge ∥ EKF, duplicated) base_link →(rsp) chassis → sensors`.
 
-**Mock composition note:** if launched with `mock:=true`, the rung 01 stub again yields no `/scan`, so AMCL never updates; and the duplicate base-bridge issue from §5.3 recurs.
+**Mock composition note (updated 2026-07-28):** with `mock:=true`, `mock_scan` supplies `/scan`, so AMCL receives laser data and the duplicate-base_bridge problem is gone (GAP-16). AMCL still cannot *converge* in mock, because the synthetic scan is a 5 × 4 m rectangle while the shipped map is an apartment — the two never match. Mock exercises the lifecycle, TF chain, and topic plumbing; localization accuracy (NAV-05, ≤ 0.15 m) remains a hardware measurement.
 
 ### 6.4 Measurable outputs
 
@@ -648,7 +661,7 @@ Processing: detection → confidence gate → wrap `position` as `PointStamped` 
 
 Two integration observations:
 1. **`/dog/found` has two publishers** once rung 07 and 08 both run (07 publishes true/false at 5 Hz; 08 publishes only `true` on success). Subscribers like `mission_controller` see an interleaved stream (Appendix B-12).
-2. The source imports only `Buffer/TransformListener/TransformException` from `tf2_ros`; `Buffer.transform()` on a `PointStamped` requires the type-registration side-effect of importing `tf2_geometry_msgs`, which is absent. If that import is not pulled in transitively, every callback raises an unregistered-type error that the `except TransformException` clause does **not** catch — a **plausible latent defect to check on first hardware run** (Appendix B-13).
+2. **(Resolved)** `Buffer.transform()` on a `PointStamped` requires the type-registration side-effect of importing `tf2_geometry_msgs`. That import was previously absent, so every callback would have raised an unregistered-type error the `except TransformException` clause does not catch. It is now present and annotated at `dog_locator.py:13` (Appendix B-13, resolved). Pose *correctness* through the camera→map chain is still unmeasured — that needs real detections.
 
 ### 9.4 Measurable outputs
 
@@ -1036,7 +1049,8 @@ Mode logic implemented: battery < 10.5 → SAFE; `_estopped` → SAFE (but `_est
 ## 15. Rung 14 — Full Bringup
 
 ```bash
-ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true
+ros2 launch billiebot_bringup 14_full_bringup.launch.py mock:=true \
+  map:="$(ros2 pkg prefix billiebot_navigation)/share/billiebot_navigation/maps/my_apartment_v1.yaml"
 ```
 
 ### 15.1 Referenced files
@@ -1054,8 +1068,8 @@ Real-hardware node census (27 processes):
 | Subsystem | Nodes |
 |---|---|
 | Drive & description | `robot_state_publisher`, `base_bridge` |
-| Localization | `ekf_filter_node` **×2** (B-4), `map_server`, `amcl`, `lifecycle_manager_localization` |
-| Lidar | `rplidar_node` (mock: `mock_lidar_stub` = extra base_bridge, B-1/B-2) |
+| Localization | `ekf_filter_node` (single instance since GAP-6), `map_server`, `amcl`, `lifecycle_manager_localization` |
+| Lidar | `rplidar_node` (mock: `mock_scan`, a real synthetic `/scan` publisher — B-1/B-2 resolved) |
 | Nav2 | `controller_server`, `planner_server`, `behavior_server`, `bt_navigator`, `lifecycle_manager_navigation` |
 | Perception | `oakd_dog_detector`, `dog_locator`, `thermal_node`, `noir_cam_node` |
 | Audio | `audio_classifier`, `speaker_node` |
@@ -1128,7 +1142,7 @@ Legend: ● satisfied by the bringup ladder (mechanism present and verifiable) �
 | SYS-FND-3 (1.0–2.0 m standoff) | 13 | ◐ | 1.0 m floor enforced at goal acceptance; hold + correct geometry missing |
 | SYS-FND-4 (find ≤10 min, 80 %) | — | — | Acceptance trial only (Build Phase 5) |
 | SYS-PER-1 (RGB dog ≥5 FPS) | 07 | ◐ | 5 Hz pipeline ●; recall test on real dog outstanding; real mode needs `model_path` |
-| SYS-PER-2 (3-D position ±0.2 m) | 07 + 08 | ◐ | Full camera→map chain; accuracy test outstanding; B-13 latent TF-import risk |
+| SYS-PER-2 (3-D position ±0.2 m) | 07 + 08 | ◐ | Full camera→map chain; B-13 TF-import risk resolved; accuracy test still outstanding (needs hardware) |
 | SYS-PER-3 (thermal blob) | 09 | ● | Thresholds literal (30–40 °C, ≥8 px); range/darkness demo outstanding |
 | SYS-PER-4 (audio class + DoA) | 11 | ◐ | Pipeline ●; recall test set outstanding; XVF3800 VID/PID risk (B-14) |
 | SYS-PER-5 (NoIR low-light detect) | 10 | ○ | Imagery only; no detector, no lux switch, no IR illuminator (design-acknowledged gap) |
@@ -1160,19 +1174,19 @@ Findings from this decomposition, ordered by systems impact. "Latent" = predicte
 
 | # | Finding | Evidence | Impact | Suggested disposition |
 |---|---|---|---|---|
-| B-1 | **Mock lidar publishes no `/scan`.** Rung 01's mock branch launches `base_bridge` as `mock_lidar_stub`; the launch file's own comment calls it a placeholder | `01_lidar.launch.py` (mock Node block); `base_bridge.py` has no LaserScan publisher | Rung 01's verify criterion unfalsifiable in mock; rungs 04/05/06/14 mock have no SLAM/costmap data; `verify_rung_01.sh` fails by construction | Write a ~30-line mock scan publisher (synthetic rectangular room) — unblocks the whole mock nav chain |
-| B-2 | **Duplicate base_bridge in mock composition.** Rungs 04/05/06/14 include both `01_lidar` (mock ⇒ stub base_bridge) and `03→02` (real base_bridge): two publishers on `/odom`, `/joint_states`, `/battery_state`, two `/e_stop` servers (TF flapping no longer occurs since B-3's fix — neither instance broadcasts `odom→base_link` by default) | Launch inclusion graph §1.2 | Interleaved odometry from two integrators; nondeterministic e-stop behavior | Falls out automatically if B-1 is fixed |
+| B-1 | **Resolved 2026-07-28 (GAP-16).** ~~Mock lidar publishes no `/scan` — rung 01's mock branch launches `base_bridge` as `mock_lidar_stub`~~ — `billiebot_base/mock_scan.py` now publishes a synthetic `LaserScan` (360 samples, 5 × 4 m rectangular room, per-beam noise) at 10 Hz on `laser_frame`; the mock branch of `01_lidar.launch.py` launches it | `01_lidar.launch.py:36-43`; `billiebot_base/mock_scan.py`; `billiebot_base/setup.py:26` | (historical) rung 01 verify unfalsifiable in mock; rungs 04/05/06/14 had no SLAM/costmap data | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-16 |
+| B-2 | **Resolved 2026-07-28 (GAP-16).** ~~Duplicate base_bridge in mock composition — rungs 04/05/06/14 included both `01_lidar` (mock ⇒ stub base_bridge) and `03→02` (real base_bridge)~~ — fell out automatically when B-1 was fixed, exactly as this entry predicted: the mock branch launches `mock_scan`, not a second `base_bridge`. Verified at rung 04 mock: `ros2 node list \| grep -c base_bridge` → **1** | Launch inclusion graph §1.2 | (historical) interleaved odometry from two integrators; nondeterministic e-stop behavior | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-16 |
 | B-3 | **Resolved 2026-07-17 (GAP-5).** ~~`odom→base_link` TF multi-broadcast~~ — `base_driver.yaml` now defaults `publish_tf: false` (EKF sole owner); `publish_tf:=true` launch arg restores the base broadcast for rung-02-only bench work | Both config files; `base.launch.py` / `02_base.launch.py` | (historical) raw vs. filtered pose divergence → TF consumers see jumps | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-5 |
 | B-4 | **Resolved 2026-07-17 (GAP-6).** ~~Second `ekf_filter_node` in rung 06~~ — the EKF block was removed from `navigation.launch.py`; rung 03's `ekf_filter_node` is the single instance | `navigation.launch.py` | (historical) duplicate node name; two `/odometry/filtered` publishers; `odom→base_link` contention | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-6 |
 | B-5 | **Mission logic is a shell.** `mission_controller` never sends Nav2 goals, never advances `_current_wp_idx`, never increments `_nav_failure_count`, never sets `_estopped` from `/e_stop`, and only logs DoA. The compiled BT (`billiebot_main.xml` + PolicyDecision/BatteryGuard/EStopGuard) — which *does* encode patrol/policy/safety — is loaded by no process | `mission_controller.py` `tick()`; `mission.launch.py` (no BT executor) | SYS-NAV-4/6, SYS-FND-1/2, SYS-EXT-2 unverifiable end-to-end; TC-16/TC-19 blocked | Decide: finish the Python controller (load `patrol_waypoints.yaml`, drive Nav2) or stand up the BT executor the design intended |
-| B-6 | **Empty `map` default silently disables localization.** `map:=''` → `map_server` lifecycle configure fails; lifecycle manager can't activate; rungs 05/06/14 come up "green-ish" with no map frame | `05_amcl.launch.py` default; `localization.launch.py` | Confusing partial bringup; downstream TF-dependent nodes just stay silent | Fail loudly (launch-time assertion) or document a bundled test map |
+| B-6 | **Resolved 2026-07-28 (GAP-21).** ~~Empty `map` default silently disables localization — rungs 05/06/14 come up "green-ish" with no map frame~~ — resolved by the second of the two suggested dispositions: the bundled map is now documented. `INSTALLATION_AND_SETUP.md` §1.6 carries the authoritative explanation, every operational command in the guides passes `map:=`, and success criteria plus a troubleshooting checklist are documented. **The launch default is deliberately still `''`** — the map is a deployment choice the operator makes explicitly | `05_amcl.launch.py:19`; `localization.launch.py:19`; `jetson.launch.py:27` | (historical) confusing partial bringup; TF-dependent nodes silently idle | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-21 |
 | B-7 | **SYS-NAV-4/5 parameter drift.** Progress checker = 0.5 m/10 s vs. spec ">5 s"; near-dog 0.15 m/s speed zone absent (no speed-filter/keepout layer) | `nav2_params.yaml` | Spec-to-config mismatch discoverable only in test | Tune `movement_time_allowance`; add Nav2 speed-filter mask fed by `/dog/pose_map` |
 | B-8 | **Resolved 2026-07-17 (GAP-4).** ~~bt_navigator uses raw `/odom`~~ — `odom_topic: /odometry/filtered` set for bt_navigator *and* controller_server (the latter had defaulted to raw odom) | `nav2_params.yaml` | (historical) EKF value partially bypassed | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-4 |
 | B-9 | **Resolved 2026-07-28 (GAP-20).** ~~Lidar on raw `/dev/ttyUSB1` while Arduino uses a by-id path — USB enumeration order can swap devices~~ — lidar params moved to `billiebot_bringup/config/lidar.yaml` with the stable CP2102 by-id path; both serial devices now use one convention. No udev rule needed: `/dev/serial/by-id/` is stock systemd-udev | `01_lidar.launch.py` → `config/lidar.yaml`; `base_driver.yaml` | (historical) Boot-order-dependent bringup failures on the Jetson | Done — see `DISCREPANCY_RESOLUTION_PLAN.md` §GAP-20 |
 | B-10 | **`perception.yaml` never loaded by the ladder.** Rungs 07/09/10 pass only `mock`; the yaml is loaded only by `perception.launch.py`, which no rung uses. Defaults currently equal the yaml, so behavior matches — until someone edits the yaml and nothing changes | Rung launch files vs. `perception.launch.py` | Silent config drift trap | Point rungs 07/09/10 at the yaml (as rung 11 already does for audio) |
 | B-11 | **Real-mode perception needs unset parameters and has a bbox bug.** `model_path` defaults `''` in both `oakd_dog_detector` and `audio_classifier` → real mode = error log + zero output. Additionally DepthAI `det.xmin/ymin/xmax/ymax` are normalized floats; `int()` of them zeroes the bbox fields (position/depth unaffected) | `oakd_dog_detector.py` `init_depthai_pipeline`/`real_detect`; `audio_classifier.py` | First hardware run of rungs 07/11 will silently produce nothing; bbox fields useless for downstream motion-energy features (design §5.3 ACTIVE heuristic) | Provide model artifacts + set params in yaml; scale bbox by preview size |
 | B-12 | **`/dog/found` has two publishers** (oakd_dog_detector true/false @5 Hz; dog_locator true-only per pose) | Both node sources | `mission_controller` sees an interleaved stream; PATROL↔TRACK_OBSERVE flapping in mock (no hysteresis in mission) | Single ownership (locator), or debounce in mission |
-| B-13 | *(Latent)* **`dog_locator` may throw on every detection**: `tf2_geometry_msgs` is never imported, but `Buffer.transform(PointStamped, …)` requires its type registration; the resulting error is not a `TransformException` and is uncaught | `dog_locator.py` imports | If the registration isn't pulled in transitively, `/dog/pose_map` never publishes even with perfect TF — blocks SYS-PER-2, TC-08 | Add `import tf2_geometry_msgs`; verify on first integrated run |
+| B-13 | **Resolved.** ~~*(Latent)* `dog_locator` may throw on every detection: `tf2_geometry_msgs` is never imported, but `Buffer.transform(PointStamped, …)` requires its type registration~~ — the import is now present and explicitly annotated for its side effect: `import tf2_geometry_msgs  # noqa: F401 — registers geometry_msgs types with tf2` | `dog_locator.py:13` | (historical) `/dog/pose_map` would never publish even with perfect TF — blocked SYS-PER-2, TC-08 | Done — no GAP number was ever assigned; end-to-end confirmation still wants a run with real detections |
 | B-14 | *(Latent)* **DoA queries target the wrong USB ID for the specified hardware**: code uses VID 0x2886/PID 0x0018 (ReSpeaker 4-Mic, XVF-3000 family); the design BOM says **XVF3800** | `audio_classifier.py` `_get_doa` | DoA silently 0.0° → SYS-PER-4's ±15° DoA and SYS-FND-2 unverifiable | Confirm enumeration on hardware; use the XVF3800 host API per design §5.1 |
 | B-15 | **`/var/lib/billiebot` permissions.** `dog_logger` (and report nodes) `os.makedirs` under `/var/lib` — crashes with `PermissionError` for a non-root user unless the directory is pre-provisioned | `dog_logger.py` `__init__` | Rung 12 fails at startup on a fresh machine | Provision dir in setup docs/systemd, or default to a user path |
 | B-16 | **Snapshots are zero-byte placeholders** — `_capture_snapshot` writes `b''`; no image topic is subscribed | `dog_logger.py` | SYS-STL-2's "image snapshot reference" and SYS-RPT-1's "representative snapshots" reference empty files | Subscribe `/noir/image` or an OAK preview and JPEG-encode (also gives `/noir/image` its first consumer) |
@@ -1196,7 +1210,7 @@ From the TC table in `docs/VERIFICATION.md`, with the rung that produces the evi
 | TC-05 | Battery monitoring | SYS-PLT-2 | 02 | ✔ mock suite (existence; not thresholds) |
 | TC-06 | E-stop service | SYS-PLT-5 | 02 | ✔ mock suite (existence; not stop latency) |
 | TC-07 | Dog 3D detection | SYS-PER-1/2 | 07 | ✔ mock suite + `verify_rung_07.sh` |
-| TC-08 | Dog locator TF | SYS-PER-2 | 08 | ✔ mock suite — but needs TF the mock stack can't provide (B-1/B-13) |
+| TC-08 | Dog locator TF | SYS-PER-2 | 08 | ✔ mock suite — the TF blockers are cleared (B-1 and B-13 resolved); still an existence check, not a pose-correctness check |
 | TC-09 | Thermal imaging | SYS-PER-3 | 09 | ✔ mock suite |
 | TC-10 | Thermal blob detection | SYS-PER-3 | 09 | ✔ mock suite |
 | TC-11 | Audio classification | SYS-PER-4 | 11 | ✔ mock suite (existence; not recall/DoA) |
@@ -1212,7 +1226,7 @@ From the TC table in `docs/VERIFICATION.md`, with the rung that produces the evi
 | TC-21 | Daily report | SYS-RPT-1 | 12 | ✘ manual (`daily_report --standalone` is scriptable) |
 | TC-22 | Report server | SYS-RPT-2 | 12 | ◐ `verify_rung_12.sh` curls `/health` (WARN-only, non-fatal) |
 
-**Summary judgment:** the ladder is a well-ordered dependency chain whose lower rungs (02, 03, 09, 11, 12) are genuinely verifiable today, whose middle rungs (04–06) are real-hardware-only until the mock scan gap (B-1) is closed, and whose top rungs (13–14) verify *interfaces* while the mission *behavior* they imply (patrol, search, standoff-hold, SAFE escalation) remains the largest open implementation front (B-5). The requirements architecture — action-server primitives, context-vector state messages, (context, action, outcome) logging — is faithfully carried through the code, so the Behavior-AI insertion path (SYS-EXT-*) survives decomposition intact.
+**Summary judgment (as of 2026-07-28):** the ladder is a well-ordered dependency chain whose lower rungs (02, 03, 09, 11, 12) are genuinely verifiable today; whose middle rungs (04–06) became exercisable off-hardware once the mock scan gap (B-1) closed, though what they prove in mock is lifecycle and plumbing rather than navigation quality — the synthetic rectangle cannot make AMCL converge against a real apartment map, so accuracy stays a hardware measurement; and whose top rungs (13–14) verify *interfaces* while the mission *behavior* they imply (patrol, search, standoff-hold, SAFE escalation) remains the largest open implementation front (B-5). The requirements architecture — action-server primitives, context-vector state messages, (context, action, outcome) logging — is faithfully carried through the code, so the Behavior-AI insertion path (SYS-EXT-*) survives decomposition intact.
 
 ---
 
