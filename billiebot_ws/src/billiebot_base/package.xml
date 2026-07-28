@@ -7,7 +7,6 @@
   <maintainer email="billie@todo.todo">billie</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
 
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
@@ -16,7 +15,7 @@
   <depend>tf2_ros</depend>
   <depend>billiebot_interfaces</depend>
 
-  <exec_depend>pyserial</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
