@@ -180,7 +180,7 @@ container$ ros2 launch billiebot_bringup 05_amcl.launch.py mock:=true \
     map:=/ws/src/billiebot_navigation/maps/my_apartment_v1.yaml
 ```
 
-(VERIFICATION.md's rung 05 line omits `mock:=true` — on the Mac you need it, or the launch tries to open the real lidar and Arduino serial ports. The repo ships an apartment map to localize against.)
+(On the Mac you need `mock:=true`, or the launch tries to open the real lidar and Arduino serial ports. `map:=` is required regardless of mock mode — this rung runs `map_server` + AMCL; see [Why Nav2 needs a map](INSTALLATION_AND_SETUP.md#nav2-needs-a-map). The repo ships the apartment map used above to localize against.)
 
 **New skills:** setting the initial pose from the 3D panel, latched topics, covariance visualization. *(This answers "How do I set the pose?")*
 
