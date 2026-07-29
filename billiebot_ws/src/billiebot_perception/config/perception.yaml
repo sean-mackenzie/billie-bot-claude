@@ -3,7 +3,7 @@ oakd_dog_detector:
   ros__parameters:
     mock: false
     confidence_threshold: 0.5
-    model_path: ""
+    model_path: "/home/sean/billiebot/models/yolov8n_416.blob"
     camera_frame: oakd_link_optical
     publish_rate_hz: 5.0
 
