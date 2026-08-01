@@ -231,7 +231,7 @@ Column key: **Trace** = deriveReqt parent · **V** = verification method · **De
 
 | ID | Requirement (shall) | Trace ⟵ | V | Demonstrated by | Status | Evidence |
 |---|---|---|---|---|---|---|
-| PER-01 | The RGB detector shall run YOLOv8n spatial detection on-device (OAK-D RVC2), retaining only COCO class 16 (`dog`) above `confidence_threshold` 0.5, at ≥ 5 Hz (`publish_rate_hz`). | SYS-PER-1 | T | ACT-01 a7; IBD-03 blk oakd; TC-07 | 🟡 | `oakd_dog_detector.py`; **[GAP-11]** `model_path` default `''` ⇒ real mode inert until configured |
+| PER-01 | The RGB detector shall run YOLOv8n spatial detection on-device (OAK-D RVC2), retaining only COCO class 16 (`dog`) above `confidence_threshold` 0.5, at ≥ 5 Hz (`publish_rate_hz`). | SYS-PER-1 | T | ACT-01 a7; IBD-03 blk oakd; TC-07 | ✅ | `oakd_dog_detector.py`; **GAP-11 resolved 2026-07-31** — real mode now requires a valid staged `model_path` (fails loud otherwise) and `07_oakd.launch.py` loads `perception.yaml`; on-hardware detection run (TC-07) still owed |
 | PER-02 | Each detection shall be published as `DogDetection3D` on `/dog/detections_3d` carrying bbox, confidence, camera-frame 3-D position (stereo, 0.1–5 m depth window), and depth. | SYS-PER-2 | T | IBD-03 c7; IFC-01; TC-07 | ✅ | `oakd_dog_detector.py` (spatial coords mm→m) |
 | PER-03 | The dog locator shall transform detections with confidence ≥ 0.5 from the camera optical frame to the `map` frame via TF (0.1 s timeout) and publish `geometry_msgs/PoseStamped` on `/dog/pose_map`. | SYS-PER-2 | T | ACT-02 a2; IBD-03 c8; TC-08 | ✅ | `dog_locator.py` |
 | PER-04 | Exactly one component shall publish the dog-found flag `/dog/found` (`std_msgs/Bool`). | SYS-PER-2 (derived, new) | I | IBD-03 note **[GAP-12]** | ❌ | Both `oakd_dog_detector` and `dog_locator` publish it |
@@ -1088,7 +1088,7 @@ Launch evidence: `jetson.launch.py` (rungs 06 + 07 + 08 + 13), `pi.launch.py` (r
 
 ### 5.4 Compliance summary & discrepancy register
 
-**L2 status rollup (97 requirements):** ✅ Satisfied 57 · 🟡 Partial 19 · ❌ Gap 13 · ⬜ HW-pending 8.
+**L2 status rollup (97 requirements):** ✅ Satisfied 58 · 🟡 Partial 18 · ❌ Gap 13 · ⬜ HW-pending 8.
 
 Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code discrepancy analysis; GAP-11, 12, 13, 15, 18, 19 are renumbered or added by this report; GAP-20 was added later from the bringup-ladder defect list (Appendix B-9). **Disposition: F = fix code · M = update model/design doc · P = parameter/config change · H = hardware task.**
 
@@ -1104,7 +1104,7 @@ Canonical gap register. GAP-1…10, 14, 16, 17 correspond to the design-vs-code 
 | GAP-8 | `_estopped` never set — mission SAFE-on-estop branch and `MissionStatus.estopped` dead | MSN-02 | F (subscribe/estop-state service from base_bridge) |
 | GAP-9 | dog_logger narrower than design: snapshots are empty placeholder files; `action`/`outcome` not captured from action results; no `/events/last` | STL-12, STL-13, STL-14, RPT-02, EXT-03 | F |
 | GAP-10 | `PatrolWaypoints.action` has no server; `patrol_waypoints.yaml` loaded by nothing | MSN-06, MSN-14, SYS-NAV-6 | F |
-| GAP-11 | `oakd_dog_detector` `model_path` default `''` ⇒ real mode logs error, creates no pipeline | PER-01 | P (require param; fail loudly) |
+| GAP-11 | `oakd_dog_detector` `model_path` default `''` ⇒ real mode fails loud (`sys.exit(1)`) instead of silently idling; `07_oakd.launch.py` now loads `perception.yaml` — **Resolved 2026-07-31** | PER-01 | P (done) |
 | GAP-12 | `/dog/found` published by both oakd_dog_detector and dog_locator | PER-04 | F (single owner: dog_locator) |
 | GAP-13 | No near-dog speed restriction: no speed-filter/keepout costmap layer fed by `/dog/pose_map`; only ApproachDog's own goals are capped | NAV-12, SYS-NAV-5 | F |
 | GAP-14 | Firmware watchdog `AUTO_STOP_INTERVAL` fixed to 500 ms and flashed/bench-verified (TC-29) — **Resolved 2026-07-11** | MOB-05, SYS-PLT-5 | F (done) |

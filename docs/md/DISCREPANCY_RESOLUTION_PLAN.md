@@ -22,6 +22,7 @@ File:line references were accurate when each sheet was last touched; re-verify t
 | 2026-07-17 | GAP-5, GAP-6, GAP-4 resolved (TF ownership, single EKF, filtered odom) |
 | 2026-07-28 | GAP-20 resolved (lidar by-id path) |
 | 2026-07-28 | GAP-16 marked resolved — the fix had landed in code but was never recorded here; GAP-21 added and resolved (empty `map` default now documented). Both re-verified by running the mock ladder |
+| 2026-07-31 | GAP-11 resolved (OAK-D `model_path` fail-loud + rungs 07/09/10 now load `perception.yaml`) |
 
 ---
 
@@ -50,7 +51,7 @@ File:line references were accurate when each sheet was last touched; re-verify t
 | GAP-10 | No patrol-waypoint executor; `patrol_waypoints.yaml` unloaded | 🟠 | F | B | M | MSN-06, MSN-14, SYS-NAV-6 | Open |
 | GAP-15 | Audio-DoA response is a log line; no INVESTIGATE / re-sort | 🟠 | F | B | M | MSN-04, SYS-FND-2 | Open |
 | GAP-13 | No near-dog speed restriction (≤ 0.15 m/s within 2 m) | 🟠 | F | B | M | NAV-12, SYS-NAV-5 | Open |
-| GAP-11 | OAK-D `model_path` defaults to `''` — real detector silently inert | 🟠 | P | B | S | PER-01, SYS-PER-1 | Open |
+| GAP-11 | OAK-D `model_path` defaults to `''` — real detector silently inert | 🟠 | P | B | S | PER-01, SYS-PER-1 | Resolved (2026-07-31) |
 | GAP-9 | Logger gaps: empty snapshots, hard-coded action, no `/events/last` | 🟠 | F | C | M | STL-12/13/14, RPT-02, SYS-EXT-3 | Open |
 | GAP-12 | `/dog/found` has two publishers (and no false-on-loss from locator) | 🟡 | F | C | S | PER-04 | Open |
 | GAP-3 | `BatteryStatus.msg` defined but never published | 🟡 | M | C | S | IFC-06 | Open |
@@ -236,14 +237,17 @@ Promoted from `BRINGUP_LADDER_ANALYSIS.md` Appendix B-6, the same way GAP-20 was
 
 #### GAP-11 — Real detector silently inert without `model_path`
 
-**Status:** Open · **Severity:** 🟠 Major-functional (field-failure trap) · **Disposition:** P (+ tiny F) · **Effort:** S
+**Status:** Resolved (2026-07-31, branch `fix/gap-11-oakd-model-path-failfast`) · **Severity:** 🟠 Major-functional (field-failure trap) · **Disposition:** P (+ tiny F) · **Effort:** S
 
-- **What/Where:** `…/src/billiebot_perception/billiebot_perception/oakd_dog_detector.py:24` — `declare_parameter('model_path', '')`; in real mode, line 84-87 only calls `setBlobPath` if non-empty, and on failure line 109 logs `'No model_path specified for OAK-D detector'` — **the node stays alive with no timer and publishes nothing**. Neither `…/launch/07_oakd.launch.py` (passes only `mock`) nor `perception.yaml` sets a real path.
+- **What/Where:** `…/src/billiebot_perception/billiebot_perception/oakd_dog_detector.py:24` — `declare_parameter('model_path', '')`; in real mode, line 84-87 only called `setBlobPath` if non-empty, and on failure line 109 logged `'No model_path specified for OAK-D detector'` — **the node stayed alive with no timer and published nothing**. Neither `…/launch/07_oakd.launch.py` (passed only `mock`) nor `perception.yaml` set a real path.
 - **Why it matters:** PER-01 / SYS-PER-1: on the actual robot the perception chain comes up "green" (node running) but blind; downstream `/dog/found` simply never fires. Worst kind of failure — silent.
-- **Recommended fix:** (1) In real mode, treat empty/missing blob as **fatal**: log ERROR and exit non-zero so the launch supervisor makes the failure visible. (2) Add `model_path` to `…/src/billiebot_perception/config/perception.yaml` with the deployment path (e.g., `/opt/billiebot/models/yolov8n_coco_416x416.blob`) and make `07_oakd.launch.py` load that yaml (today it passes only `{'mock': mock}` — same fix pattern applies to rungs 09/10, which also skip `perception.yaml`).
-  (3) Procure/convert the YOLOv8n blob for RVC2 (Luxonis blobconverter) and stage it at that path — hardware/asset task.
-- **Verify closure:** `ros2 launch billiebot_bringup 07_oakd.launch.py` (real mode, no blob staged) → process exits with a clear error. With blob staged on hardware: `ros2 topic hz /dog/detections_3d` ≈ 5 Hz with a dog/photo in view (TC-07).
-- **Risks/notes:** Keep mock mode's behavior unchanged (mock never needs the blob).
+- **Fix applied:**
+  1. `oakd_dog_detector.py`'s `init_depthai_pipeline` now validates `model_path` *before* touching `depthai`: empty or `not os.path.isfile(model_path)` logs an ERROR naming the resolved path and calls `sys.exit(1)`. The `ImportError` (depthai not installed) and generic pipeline/device `Exception` branches were also made fatal — all three left the node identically "alive and blind" before, so all three now exit non-zero rather than only the literal empty-path case. `main()` wraps node construction in `try/except SystemExit` so `rclpy.shutdown()` still runs cleanly before the process exits. Mock mode is untouched.
+  2. `07_oakd.launch.py` now loads `…/src/billiebot_perception/config/perception.yaml` via `get_package_share_directory('billiebot_perception')`, mirroring the pattern already used by `perception.launch.py` — `parameters=[config_file, {'mock': mock}]` instead of just `{'mock': mock}`. `perception.yaml`'s `model_path` was already set (prior commit `8f56e56`) to `/home/sean/billiebot/models/yolov8n_416.blob` — the maintainer's actual Jetson path, not the sheet's illustrative `/opt/...` example — but until this fix the yaml was never loaded by the ladder, so the value was inert. Bundled the identical one-line fix into `09_thermal.launch.py` and `10_noir.launch.py`, which shared the same "skip perception.yaml" bug (also closes Appendix B-10 in `BRINGUP_LADDER_ANALYSIS.md`, which had no GAP number of its own).
+  3. Blob procurement/staging on the Jetson was done outside this repo (commit `8f56e56`'s message: "added YOLOv8n model to local directory on the Jetson: `/home/sean/billiebot/models/`") — not independently verifiable from a dev host, taken on the maintainer's word.
+- **Verify closure (executed 2026-07-31, `billiebot-dev` Docker container, `billiebot_ws` mounted at `/ws`):** Clean `colcon build --symlink-install`, 10 packages. Mock regression: `07_oakd.launch.py mock:=true` → `verify_rung_07.sh` **2/2 PASS**, log confirms `OAK-D detector running in MOCK mode` (unaffected). Real mode, `oakd_dog_detector` run directly with a params file forcing `model_path: ""` → ERROR logged naming the empty path, process exits **1**. Same with `model_path` pointed at a nonexistent file → identical fatal exit. Full integration check — `ros2 launch billiebot_bringup 07_oakd.launch.py` (real mode, default, no `mock` arg) using the actual installed `perception.yaml` (its Jetson-only path doesn't exist in the dev container) — confirms the launch file now genuinely loads the yaml (`--params-file .../perception.yaml` visible in the node's launched command) and the node fails loud: `process has died [pid …, exit code 1 ...]`, exactly reproducing this sheet's own verify-closure example. `09_thermal.launch.py` and `10_noir.launch.py` re-checked in mock mode after the bundled fix — both still start clean, no regression.
+  - **Hardware verification still owed on the Jetson** (no OAK-D on the dev host, same caveat as GAP-20's lidar): with the blob genuinely staged and the camera attached, `ros2 topic hz /dog/detections_3d` ≈ 5 Hz with a dog/photo in view (TC-07) has not yet been observed.
+- **Risks/notes:** Mock mode's behavior is unchanged (mock never needs the blob), confirmed above. Broadening the fatal-exit scope beyond the literal empty-path case means a real-mode launch with `depthai` uninstalled, or an OAK-D physically unplugged, now crash-exits instead of logging and idling — this is the intended tightening (per PER-01/SYS-PER-1, "silent but green" is exactly the failure mode being closed), but it's a behavior change worth knowing about if the node is ever run real-mode for a reason unrelated to dog detection.
 
 ### Phase C sheets
 

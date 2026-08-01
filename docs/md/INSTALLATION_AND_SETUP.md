@@ -533,7 +533,7 @@ jetson$ echo 'source ~/billie-bot-claude/billiebot_ws/install/setup.bash' >> ~/.
 jetson$ echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> ~/.bashrc
 ```
 
-Install the **YOLOv8n blob** for the OAK-D ([Appendix B](#appendix-b--ml-model-assets)) and set its path in `billiebot_ws/src/billiebot_perception/config/perception.yaml` (`oakd_dog_detector → model_path`). The parameter ships empty; in real (non-mock) mode the node logs an error without it.
+Install the **YOLOv8n blob** for the OAK-D ([Appendix B](#appendix-b--ml-model-assets)) and set its path in `billiebot_ws/src/billiebot_perception/config/perception.yaml` (`oakd_dog_detector → model_path`). The parameter ships empty; in real (non-mock) mode the node now treats an empty or missing blob as fatal — it logs an ERROR and exits non-zero rather than idling silently, so a missing model surfaces immediately instead of a perception chain that looks "up" but reports nothing.
 
 **Verify:**
 
@@ -933,7 +933,7 @@ The detector creates a `YoloSpatialDetectionNetwork` with a **416×416** preview
 | `depthai` raises `X_LINK_DEVICE_NOT_FOUND` | Missing udev rule (§2.2.4 — run `scripts/install_udev_rules.sh`), USB-2 cable/port, or insufficient power. Replug after `udevadm trigger`. |
 | `aplay: audio open error: Device or resource busy` / wrong output | The I²S DAC must be **card 0** (`plughw:0,0` is hardcoded in `speaker_node`): set `dtparam=audio=off` and the DAC overlay, reboot, confirm with `aplay -l`. |
 | YAMNet node logs "No model_path specified" | Expected until Appendix B is done; harmless in mock mode. |
-| OAK-D node logs "No model_path specified" in real mode | Set the blob path (Appendix B). |
+| `oakd_dog_detector` exits non-zero with "model_path ... is empty or does not exist" | Set the blob path (Appendix B) — real mode treats a missing/empty blob as fatal by design (GAP-11), not a bug. |
 | `pip install` on the **Pi host OS** fails with `externally-managed-environment` | Pi OS Bookworm PEP-668. Prefer installing Python deps **inside the container**; on the host use `python3 -m venv` or `--break-system-packages`. |
 | RViz over XQuartz shows a black/garbled window | Add `-e LIBGL_ALWAYS_SOFTWARE=1`, and enable "Allow connections from network clients" in XQuartz settings, then `xhost +localhost`. |
 | Port 8080/8765 already in use on the Mac | Another container or app holds it: `docker ps` / change the `-p` mapping. |
