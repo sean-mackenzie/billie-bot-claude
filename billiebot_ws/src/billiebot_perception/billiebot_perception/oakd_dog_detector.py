@@ -16,6 +16,23 @@ from rclpy.node import Node
 from std_msgs.msg import Bool
 from billiebot_interfaces.msg import DogDetection3D
 
+# DepthAI's YoloSpatialDetectionNetwork reports xmin/ymin/xmax/ymax as normalized [0,1]
+# floats, not pixel coordinates -- see scale_bbox() below (Appendix B-11).
+PREVIEW_SIZE_PX = 416
+
+
+def scale_bbox(xmin: float, ymin: float, xmax: float, ymax: float,
+                frame_w: int = PREVIEW_SIZE_PX, frame_h: int = PREVIEW_SIZE_PX):
+    """Scales DepthAI's normalized [0,1] bbox coordinates to pixel space and clamps to the
+    frame bounds. This is a correctness fix, not a visualization feature: the previous
+    `int(det.xmin)` etc. truncated every real bbox to ~0 because xmin/xmax are always in
+    [0,1] (Appendix B-11, BRINGUP_LADDER_ANALYSIS.md). Returns (x, y, w, h) as ints."""
+    x0 = min(max(round(xmin * frame_w), 0), frame_w)
+    y0 = min(max(round(ymin * frame_h), 0), frame_h)
+    x1 = min(max(round(xmax * frame_w), 0), frame_w)
+    y1 = min(max(round(ymax * frame_h), 0), frame_h)
+    return x0, y0, max(x1 - x0, 0), max(y1 - y0, 0)
+
 
 class OakdDogDetector(Node):
     def __init__(self):
@@ -26,16 +43,43 @@ class OakdDogDetector(Node):
         self.declare_parameter('model_path', '')
         self.declare_parameter('camera_frame', 'oakd_link_optical')
         self.declare_parameter('publish_rate_hz', 5.0)
+        # Bench-only outputs, all OFF by default -- deployment behavior/topology is
+        # unchanged unless a bench launch explicitly enables one of these.
+        self.declare_parameter('publish_preview', False)
+        self.declare_parameter('publish_depth_preview', False)
+        self.declare_parameter('publish_diagnostics', False)
 
         self.mock = bool(self.get_parameter('mock').value)
         self.confidence_threshold = float(self.get_parameter('confidence_threshold').value)
         self.camera_frame = str(self.get_parameter('camera_frame').value)
         self.publish_rate = float(self.get_parameter('publish_rate_hz').value)
+        self.publish_preview = bool(self.get_parameter('publish_preview').value)
+        self.publish_depth_preview = bool(self.get_parameter('publish_depth_preview').value)
+        self.publish_diagnostics = bool(self.get_parameter('publish_diagnostics').value)
 
         self.detection_pub = self.create_publisher(
             DogDetection3D, '/dog/detections_3d', 10
         )
         self.found_pub = self.create_publisher(Bool, '/dog/found', 10)
+
+        self._preview_w = PREVIEW_SIZE_PX
+        self._preview_h = PREVIEW_SIZE_PX
+        self._preview_queue = None
+        self._depth_preview_queue = None
+        self.preview_pub = None
+        self.depth_preview_pub = None
+        self.diag_pub = None
+        if self.publish_preview:
+            from sensor_msgs.msg import Image
+            self.preview_pub = self.create_publisher(Image, '/oak/rgb/preview', 10)
+        if self.publish_depth_preview:
+            from sensor_msgs.msg import Image
+            self.depth_preview_pub = self.create_publisher(Image, '/oak/depth/preview', 10)
+        if self.publish_diagnostics:
+            from diagnostic_msgs.msg import DiagnosticArray
+            self.diag_pub = self.create_publisher(
+                DiagnosticArray, '/bench/oakd_detector/diagnostics', 10
+            )
 
         if self.mock:
             self.get_logger().info('OAK-D detector running in MOCK mode')
@@ -71,7 +115,7 @@ class OakdDogDetector(Node):
 
             # RGB camera
             cam_rgb = pipeline.create(dai.node.ColorCamera)
-            cam_rgb.setPreviewSize(416, 416)
+            cam_rgb.setPreviewSize(self._preview_w, self._preview_h)
             cam_rgb.setResolution(
                 dai.ColorCameraProperties.SensorResolution.THE_1080_P
             )
@@ -114,13 +158,38 @@ class OakdDogDetector(Node):
             xout_nn.setStreamName("detections")
             spatial_nn.out.link(xout_nn.input)
 
+            # Bench-only preview streams -- these XLinkOuts are only created (and add zero
+            # bandwidth/topology change otherwise) when explicitly enabled. The preview
+            # comes off the same cam_rgb.preview link that feeds the spatial detector, so
+            # it shares the same frame sequence as the detections (multiple consumers of
+            # one DepthAI output are supported natively).
+            if self.publish_preview:
+                xout_preview = pipeline.create(dai.node.XLinkOut)
+                xout_preview.setStreamName("preview")
+                cam_rgb.preview.link(xout_preview.input)
+
+            if self.publish_depth_preview:
+                xout_depth_preview = pipeline.create(dai.node.XLinkOut)
+                xout_depth_preview.setStreamName("depth_preview")
+                stereo.depth.link(xout_depth_preview.input)
+
             self._device = dai.Device(pipeline)
             self._det_queue = self._device.getOutputQueue(
                 name="detections", maxSize=4, blocking=False
             )
+            if self.publish_preview:
+                self._preview_queue = self._device.getOutputQueue(
+                    name="preview", maxSize=4, blocking=False
+                )
+            if self.publish_depth_preview:
+                self._depth_preview_queue = self._device.getOutputQueue(
+                    name="depth_preview", maxSize=4, blocking=False
+                )
             self.timer = self.create_timer(
                 1.0 / self.publish_rate, self.real_detect
             )
+            if self.publish_diagnostics:
+                self.diag_timer = self.create_timer(1.0, self._publish_diagnostics)
 
         except ImportError:
             self.get_logger().error(
@@ -147,10 +216,9 @@ class OakdDogDetector(Node):
             msg = DogDetection3D()
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.header.frame_id = self.camera_frame
-            msg.bbox_x = int(det.xmin)
-            msg.bbox_y = int(det.ymin)
-            msg.bbox_w = int(det.xmax - det.xmin)
-            msg.bbox_h = int(det.ymax - det.ymin)
+            msg.bbox_x, msg.bbox_y, msg.bbox_w, msg.bbox_h = scale_bbox(
+                det.xmin, det.ymin, det.xmax, det.ymax, self._preview_w, self._preview_h
+            )
             msg.confidence = det.confidence
             msg.position.x = det.spatialCoordinates.x / 1000.0
             msg.position.y = det.spatialCoordinates.y / 1000.0
@@ -162,6 +230,50 @@ class OakdDogDetector(Node):
         found_msg = Bool()
         found_msg.data = dog_found
         self.found_pub.publish(found_msg)
+
+        if self.preview_pub is not None and self._preview_queue is not None:
+            self._publish_preview_frame(self.preview_pub, self._preview_queue, 'bgr8')
+        if self.depth_preview_pub is not None and self._depth_preview_queue is not None:
+            self._publish_preview_frame(self.depth_preview_pub, self._depth_preview_queue, 'mono16')
+
+    def _publish_preview_frame(self, publisher, queue_, encoding):
+        try:
+            from sensor_msgs.msg import Image
+            frame = queue_.tryGet()
+            if frame is None:
+                return
+            cv_frame = frame.getCvFrame() if encoding == 'bgr8' else frame.getFrame()
+            msg = Image()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = self.camera_frame
+            msg.height = cv_frame.shape[0]
+            msg.width = cv_frame.shape[1]
+            msg.encoding = encoding
+            msg.is_bigendian = False
+            bytes_per_pixel = 3 if encoding == 'bgr8' else 2
+            msg.step = msg.width * bytes_per_pixel
+            msg.data = cv_frame.tobytes()
+            publisher.publish(msg)
+        except Exception as e:
+            self.get_logger().warning(f'Failed to publish preview frame: {e}')
+
+    def _publish_diagnostics(self):
+        from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+        arr = DiagnosticArray()
+        arr.header.stamp = self.get_clock().now().to_msg()
+        status = DiagnosticStatus()
+        status.name = 'oakd_dog_detector'
+        status.level = DiagnosticStatus.OK
+        status.message = 'OK'
+        values = []
+        for key, getter in (('usb_speed', 'getUsbSpeed'), ('device_name', 'getDeviceName')):
+            try:
+                values.append(KeyValue(key=key, value=str(getattr(self._device, getter)())))
+            except Exception:
+                pass
+        status.values = values
+        arr.status.append(status)
+        self.diag_pub.publish(arr)
 
     def mock_detect(self):
         """Publish synthetic detections for testing."""

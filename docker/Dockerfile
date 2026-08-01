@@ -18,9 +18,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-foxglove-bridge \
     ros-humble-rviz2 \
     ros-humble-teleop-twist-keyboard \
+    # --- billiebot_sensor_tests: rosbag2 (authoritative bench recording) and
+    # diagnostic_msgs (bench status/diagnostics topics) are pulled in transitively by
+    # nav2/slam_toolbox today, but are declared explicitly here since
+    # billiebot_sensor_tests depends on them directly, not on navigation ---
+    ros-humble-rosbag2 \
+    ros-humble-diagnostic-msgs \
     # --- build & system tools ---
     python3-pip \
     python3-colcon-common-extensions \
+    python3-pytest \
     alsa-utils \
     libportaudio2 \
     libusb-1.0-0 \

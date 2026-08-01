@@ -1,0 +1,223 @@
+{
+  "configById": {
+    "Tab!main": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "OAK-D",
+          "layout": {
+            "first": {
+              "first": "ImageViewPanel!oak_rgb",
+              "second": "ImageViewPanel!oak_depth",
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "second": {
+              "first": {
+                "first": "3D!oak_points",
+                "second": {
+                  "first": "ImageViewPanel!oak_preview",
+                  "second": "ImageViewPanel!oak_annotated",
+                  "direction": "column",
+                  "splitPercentage": 50
+                },
+                "direction": "row",
+                "splitPercentage": 40
+              },
+              "second": {
+                "first": {
+                  "first": "StateTransitions!dog_found",
+                  "second": "Plot!oak_detections",
+                  "direction": "row",
+                  "splitPercentage": 30
+                },
+                "second": {
+                  "first": "DiagnosticSummary!oak_diag",
+                  "second": "DiagnosticSummary!oak_detector_diag",
+                  "direction": "row",
+                  "splitPercentage": 50
+                },
+                "direction": "column",
+                "splitPercentage": 50
+              },
+              "direction": "column",
+              "splitPercentage": 65
+            },
+            "direction": "column",
+            "splitPercentage": 55
+          }
+        },
+        {
+          "title": "Thermal",
+          "layout": {
+            "first": {
+              "first": "ImageViewPanel!thermal_color",
+              "second": "ImageViewPanel!thermal_raw",
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "second": {
+              "first": "Plot!thermal_blob_temp",
+              "second": "RawMessages!thermal_blob",
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "direction": "column",
+            "splitPercentage": 60
+          }
+        },
+        {
+          "title": "NoIR",
+          "layout": {
+            "first": "ImageViewPanel!noir_image",
+            "second": "DiagnosticSummary!noir_diag",
+            "direction": "row",
+            "splitPercentage": 70
+          }
+        },
+        {
+          "title": "Audio",
+          "layout": {
+            "first": {
+              "first": "DiagnosticSummary!audio_status",
+              "second": "DiagnosticSummary!audio_capture_diag",
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "second": {
+              "first": "RawMessages!audio_events",
+              "second": "Plot!audio_doa",
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "direction": "column",
+            "splitPercentage": 50
+          }
+        }
+      ]
+    },
+    "ImageViewPanel!oak_rgb": {
+      "cameraTopic": "/bench/oakd/rgb/image_raw",
+      "enabledMarkerTopics": [],
+      "flipHorizontal": false,
+      "flipVertical": false,
+      "rotation": 0
+    },
+    "ImageViewPanel!oak_depth": {
+      "cameraTopic": "/bench/oakd/depth/image_raw",
+      "colorMode": "turbo",
+      "minValue": 100,
+      "maxValue": 5000,
+      "enabledMarkerTopics": []
+    },
+    "3D!oak_points": {
+      "cameraState": { "distance": 3, "perspective": true, "target": [0, 0, 0] },
+      "topics": {
+        "/bench/oakd/points": { "visible": true, "pointSize": 3 }
+      },
+      "followTf": "oakd_link_optical"
+    },
+    "ImageViewPanel!oak_preview": {
+      "cameraTopic": "/oak/rgb/preview",
+      "enabledMarkerTopics": []
+    },
+    "ImageViewPanel!oak_annotated": {
+      "cameraTopic": "/oak/rgb/annotated",
+      "enabledMarkerTopics": []
+    },
+    "Plot!oak_detections": {
+      "paths": [
+        { "value": "/dog/detections_3d.confidence", "enabled": true, "label": "confidence" },
+        { "value": "/dog/detections_3d.depth", "enabled": true, "label": "depth_m" }
+      ],
+      "showLegend": true,
+      "isSynced": true
+    },
+    "StateTransitions!dog_found": {
+      "paths": [{ "value": "/dog/found.data", "label": "dog_found" }]
+    },
+    "DiagnosticSummary!oak_diag": {
+      "topicToRender": "/bench/oakd/diagnostics",
+      "pinnedIds": [],
+      "hardwareIdFilter": ""
+    },
+    "DiagnosticSummary!oak_detector_diag": {
+      "topicToRender": "/bench/oakd_detector/diagnostics",
+      "pinnedIds": [],
+      "hardwareIdFilter": ""
+    },
+    "ImageViewPanel!thermal_color": {
+      "cameraTopic": "/bench/thermal/image_color",
+      "enabledMarkerTopics": []
+    },
+    "ImageViewPanel!thermal_raw": {
+      "cameraTopic": "/thermal/image",
+      "colorMode": "turbo",
+      "minValue": 20,
+      "maxValue": 45
+    },
+    "RawMessages!thermal_blob": {
+      "topicPath": "/thermal/blob",
+      "expansion": "all"
+    },
+    "Plot!thermal_blob_temp": {
+      "paths": [
+        { "value": "/thermal/blob.mean_temp", "enabled": true, "label": "mean_temp_c" },
+        { "value": "/thermal/blob.max_temp", "enabled": true, "label": "max_temp_c" }
+      ],
+      "showLegend": true,
+      "isSynced": true
+    },
+    "ImageViewPanel!noir_image": {
+      "cameraTopic": "/noir/image",
+      "enabledMarkerTopics": []
+    },
+    "DiagnosticSummary!noir_diag": {
+      "topicToRender": "/bench/noir/diagnostics",
+      "pinnedIds": [],
+      "hardwareIdFilter": ""
+    },
+    "DiagnosticSummary!audio_status": {
+      "topicToRender": "/bench/audio_classifier/status",
+      "pinnedIds": [],
+      "hardwareIdFilter": ""
+    },
+    "DiagnosticSummary!audio_capture_diag": {
+      "topicToRender": "/bench/audio/diagnostics",
+      "pinnedIds": [],
+      "hardwareIdFilter": ""
+    },
+    "RawMessages!audio_events": {
+      "topicPath": "/audio/events",
+      "expansion": "all"
+    },
+    "Plot!audio_doa": {
+      "paths": [{ "value": "/audio/events.doa_deg", "enabled": true, "label": "doa_deg" }],
+      "showLegend": true,
+      "isSynced": true
+    },
+    "DiagnosticSummary!bench_status": {
+      "topicToRender": "/bench/status",
+      "pinnedIds": [],
+      "hardwareIdFilter": ""
+    },
+    "Log!bench_log": {
+      "searchTerms": [],
+      "minLogLevel": 1
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": { "speed": 1 },
+  "layout": {
+    "first": "DiagnosticSummary!bench_status",
+    "second": {
+      "first": "Log!bench_log",
+      "second": "Tab!main",
+      "direction": "column",
+      "splitPercentage": 15
+    },
+    "direction": "column",
+    "splitPercentage": 10
+  }
+}

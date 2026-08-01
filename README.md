@@ -24,7 +24,7 @@ BillieBot is a differential-drive robot with multi-modal sensing (stereo vision,
 
 ## Software Architecture
 
-10 ROS 2 packages in `billiebot_ws/src/`:
+11 ROS 2 packages in `billiebot_ws/src/`:
 
 | Package | Type | Description |
 |---------|------|-------------|
@@ -38,6 +38,7 @@ BillieBot is a differential-drive robot with multi-modal sensing (stereo vision,
 | `billiebot_mission` | ament_cmake+py | BT nodes (C++), action servers, mission controller |
 | `billiebot_bringup` | ament_cmake | 16 launch files, CycloneDDS multi-machine config |
 | `billiebot_tests` | ament_python | Integration tests, mock test suite |
+| `billiebot_sensor_tests` | ament_python | Per-sensor real-hardware bench tests (see [package README](billiebot_ws/src/billiebot_sensor_tests/README.md) and [bench test plan](docs/md/BILLIEBOT_SENSOR_BENCH_TEST_PLAN.md)) |
 
 ## Quick Start
 
@@ -109,6 +110,7 @@ Update IPs in `billiebot_bringup/config/cyclonedds.xml`.
 
 - **[docs/VERIFICATION.md](docs/VERIFICATION.md)** — Full bringup ladder with expected outputs and 22 acceptance tests
 - **[docs/MEASURE_ME.md](docs/MEASURE_ME.md)** — Physical values to measure on the actual robot (sensor mounts, encoder calibration, battery divider)
+- **[docs/md/BILLIEBOT_SENSOR_BENCH_TEST_PLAN.md](docs/md/BILLIEBOT_SENSOR_BENCH_TEST_PLAN.md)** — Per-sensor real-hardware bench-test plan (OAK-D, MLX90640, NoIR, XVF3800), implemented by `billiebot_sensor_tests`
 - **[firmware/README.md](firmware/README.md)** — Arduino watchdog timer change (2000ms to 500ms)
 
 ## Reference Code
