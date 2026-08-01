@@ -1,0 +1,136 @@
+# BillieBot Sensor Bench: central configuration.
+#
+# Distinguishes required (system-requirement) thresholds from provisional (engineering-gate)
+# thresholds -- see billiebot_sensor_tests/common/config.py's BenchConfig.required()/
+# .provisional() accessors. Every acceptance limit used by analysis code must be a named
+# key here, never a bare literal inside a metrics/scoring module.
+
+oakd:
+  topics:
+    rgb: /bench/oakd/rgb/image_raw
+    rgb_camera_info: /bench/oakd/rgb/camera_info
+    depth: /bench/oakd/depth/image_raw
+    depth_camera_info: /bench/oakd/depth/camera_info
+    points: /bench/oakd/points
+    diagnostics: /bench/oakd/diagnostics
+    detections: /dog/detections_3d
+    found: /dog/found
+    preview: /oak/rgb/preview
+    annotated: /oak/rgb/annotated
+    detector_diagnostics: /bench/oakd_detector/diagnostics
+  encodings:
+    rgb: bgr8
+    depth: 16UC1   # millimetres -- raw DepthAI native units, preserved losslessly
+  dimensions:
+    preview_width_px: 416
+    preview_height_px: 416
+  depth_limits:
+    min_m: 0.1
+    max_m: 5.0
+  rates:
+    requested_hz: 5.0
+  thresholds:
+    required:
+      ut_oak_01_min_avg_rate_hz: 4.5
+      ut_oak_01_max_gap_s: 1.0
+      ut_oak_02_max_median_bias_m: 0.20
+      ut_oak_02_min_valid_fraction: 0.90
+      ut_oak_02_band_m: 0.20
+      ut_oak_02_min_within_band_fraction: 0.95
+      dt_oak_01_min_found_rate_hz: 4.5
+      dt_oak_01_max_found_rate_hz: 5.5
+      dt_oak_01_min_recall: 0.85
+      dt_oak_01_recall_min_distance_m: 1.0
+      dt_oak_01_recall_max_distance_m: 4.0
+      dt_oak_01_max_depth_error_at_2m_m: 0.20
+      dt_oak_01_reliable_detection_fraction: 0.80
+    provisional:
+      ut_oak_02_plane_rmse_m: 0.05
+      dt_oak_01_max_empty_scene_false_positive_fraction: 0.05
+
+thermal:
+  topics:
+    image: /thermal/image
+    blob: /thermal/blob
+    image_color: /bench/thermal/image_color
+    image_normalized: /bench/thermal/image_normalized
+  encodings:
+    image: 32FC1
+  dimensions:
+    width_px: 32
+    height_px: 24
+    step_bytes: 128
+  rates:
+    requested_hz: 4.0
+  thresholds:
+    required:
+      ut_thm_01_min_rate_hz: 3.6
+      ut_thm_01_max_rate_hz: 4.4
+      ut_thm_01_min_finite_fraction: 0.999
+      ut_thm_02_max_drift_c: 1.0
+      dt_thm_01_area_min_px: 8
+      dt_thm_01_temp_min_c: 30.0
+      dt_thm_01_temp_max_c: 40.0
+    provisional:
+      ut_thm_02_max_target_bias_c: 2.0
+      ut_thm_02_max_background_bias_c: 2.0
+      ut_thm_02_min_cnr: 5.0
+      dt_thm_01_min_detection_fraction: 0.80
+      dt_thm_01_detection_fraction_distances_m: [0.5, 1.0, 1.5]
+
+noir:
+  topics:
+    image: /noir/image
+    diagnostics: /bench/noir/diagnostics
+  encodings:
+    image: rgb8
+  dimensions:
+    width_px: 640
+    height_px: 480
+    step_bytes: 1920
+  rates:
+    requested_hz: 5.0
+  thresholds:
+    required:
+      ut_nir_01_min_rate_hz: 4.5
+      ut_nir_01_max_repeat_dropped_fraction: 0.01
+      ut_nir_01_max_gap_s: 1.0
+      ut_nir_02_normal_max_clipping_fraction: 0.02
+    provisional:
+      ut_nir_02_normal_min_cnr: 10.0
+      ut_nir_02_normal_max_sharpness_cov: 0.20
+      ut_nir_02_ir_dark_min_cnr: 5.0
+
+audio:
+  topics:
+    events: /audio/events
+    status: /bench/audio_classifier/status
+    bench_diagnostics: /bench/audio/diagnostics
+  sample_rate_hz: 16000
+  channels: 1
+  duration_s: 3.0
+  thresholds:
+    required:
+      ut_aud_01_duration_tolerance_s: 0.05
+      ut_aud_01_sample_rate_hz: 16000
+      ut_aud_01_max_clipping_fraction: 0.001
+      dt_aud_01_min_status_rate_hz: 1.8
+      dt_aud_01_max_status_rate_hz: 2.2
+      dt_aud_01_min_bark_recall: 0.80
+      dt_aud_02_doa_not_fixed_at_zero: true
+    provisional:
+      ut_aud_01_max_abs_dc_offset: 0.01
+      dt_aud_01_max_false_bark_rate: 0.10
+      dt_aud_01_max_event_latency_s: 1.5
+      dt_aud_02_max_mean_circular_error_deg: 15.0
+      dt_aud_02_min_within_15deg_fraction: 0.80
+
+diagnostics:
+  status_topic: /bench/status
+  publish_status_hz: 1.0
+
+export:
+  formats: [png, npz, wav, csv, json]
+
+report:
+  template: default

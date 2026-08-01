@@ -20,6 +20,7 @@ setup(
     maintainer_email='billie@todo.todo',
     description='Perception nodes for BillieBot',
     license='MIT',
+    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'oakd_dog_detector = billiebot_perception.oakd_dog_detector:main',

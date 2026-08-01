@@ -20,6 +20,7 @@ setup(
     maintainer_email='billie@todo.todo',
     description='Audio classification and speaker nodes for BillieBot',
     license='MIT',
+    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'audio_classifier = billiebot_audio.audio_classifier:main',
