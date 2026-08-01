@@ -6,7 +6,9 @@ Mock mode: publishes synthetic dog detections at 5 Hz for testing.
 """
 
 import math
+import os
 import random
+import sys
 
 import rclpy
 from rclpy.node import Node
@@ -45,7 +47,23 @@ class OakdDogDetector(Node):
             self.init_depthai_pipeline()
 
     def init_depthai_pipeline(self):
-        """Initialize DepthAI pipeline for spatial YOLOv8n detection."""
+        """Initialize DepthAI pipeline for spatial YOLOv8n detection.
+
+        Real mode has no fallback: a missing model, a missing library, or a
+        pipeline/device failure all leave the node silently alive with no
+        timer (GAP-11) unless we exit non-zero here so the launch supervisor
+        surfaces the failure instead of the perception chain coming up
+        "green" but blind.
+        """
+        model_path = str(self.get_parameter('model_path').value)
+        if not model_path or not os.path.isfile(model_path):
+            self.get_logger().error(
+                f"OAK-D model_path '{model_path}' is empty or does not exist — "
+                "real mode requires a staged YOLOv8n .blob "
+                "(see INSTALLATION_AND_SETUP.md Appendix B)"
+            )
+            sys.exit(1)
+
         try:
             import depthai as dai
 
@@ -81,39 +99,37 @@ class OakdDogDetector(Node):
             mono_right.out.link(stereo.right)
 
             # Spatial detection network
-            model_path = str(self.get_parameter('model_path').value)
-            if model_path:
-                spatial_nn = pipeline.create(dai.node.YoloSpatialDetectionNetwork)
-                spatial_nn.setBlobPath(model_path)
-                spatial_nn.setConfidenceThreshold(self.confidence_threshold)
-                spatial_nn.input.setBlocking(False)
-                spatial_nn.setBoundingBoxScaleFactor(0.5)
-                spatial_nn.setDepthLowerThreshold(100)
-                spatial_nn.setDepthUpperThreshold(5000)
+            spatial_nn = pipeline.create(dai.node.YoloSpatialDetectionNetwork)
+            spatial_nn.setBlobPath(model_path)
+            spatial_nn.setConfidenceThreshold(self.confidence_threshold)
+            spatial_nn.input.setBlocking(False)
+            spatial_nn.setBoundingBoxScaleFactor(0.5)
+            spatial_nn.setDepthLowerThreshold(100)
+            spatial_nn.setDepthUpperThreshold(5000)
 
-                cam_rgb.preview.link(spatial_nn.input)
-                stereo.depth.link(spatial_nn.inputDepth)
+            cam_rgb.preview.link(spatial_nn.input)
+            stereo.depth.link(spatial_nn.inputDepth)
 
-                xout_nn = pipeline.create(dai.node.XLinkOut)
-                xout_nn.setStreamName("detections")
-                spatial_nn.out.link(xout_nn.input)
+            xout_nn = pipeline.create(dai.node.XLinkOut)
+            xout_nn.setStreamName("detections")
+            spatial_nn.out.link(xout_nn.input)
 
-                self._device = dai.Device(pipeline)
-                self._det_queue = self._device.getOutputQueue(
-                    name="detections", maxSize=4, blocking=False
-                )
-                self.timer = self.create_timer(
-                    1.0 / self.publish_rate, self.real_detect
-                )
-            else:
-                self.get_logger().error('No model_path specified for OAK-D detector')
+            self._device = dai.Device(pipeline)
+            self._det_queue = self._device.getOutputQueue(
+                name="detections", maxSize=4, blocking=False
+            )
+            self.timer = self.create_timer(
+                1.0 / self.publish_rate, self.real_detect
+            )
 
         except ImportError:
             self.get_logger().error(
                 'depthai not installed — run with mock:=true or install depthai'
             )
+            sys.exit(1)
         except Exception as e:
             self.get_logger().error(f'Failed to init OAK-D pipeline: {e}')
+            sys.exit(1)
 
     def real_detect(self):
         """Process real OAK-D detections."""
@@ -177,7 +193,11 @@ class OakdDogDetector(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = OakdDogDetector()
+    try:
+        node = OakdDogDetector()
+    except SystemExit:
+        rclpy.shutdown()
+        raise
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
