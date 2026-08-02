@@ -28,6 +28,8 @@
   - `billiebot_audio/config/audio.yaml`
   - bringup rungs `07_oakd`, `09_thermal`, `10_noir`, and `11_audio`
 
+**Implementation status (as of `19f8513`, merged 2026-08-01):** the `billiebot_sensor_tests` package described in §3.1, the four production changes in §5 of the implementation record, and the associated tests all landed in PR #32 (commit `97c9339`). This document has been updated to match the as-built package (correct package name, actual module layout, corrected default values) throughout. Wherever the shipped implementation is narrower than what this spec originally called for, an **Implementation note** callout marks the gap in place — those are genuine follow-up items, not spec changes. §11 tracks the overall resolved/partial/open status per finding.
+
 ---
 
 ## 1. Scope and Test Philosophy
@@ -90,9 +92,12 @@ A MacBook running Foxglove Studio is used only as a visualization workstation. I
 Claude Code should implement the bench suite under a new `billiebot_sensor_tests` package with the following structure:
 
 ```text
-billiebot_ws/src/billiebot_sensors_tests/
+billiebot_ws/src/billiebot_sensor_tests/
+├── package.xml, setup.py, setup.cfg, resource/billiebot_sensor_tests, README.md
 ├── config/
 │   └── sensor_bench.yaml
+├── foxglove/
+│   └── billiebot_sensor_bench.json
 ├── launch/
 │   ├── oakd_unit_bench.launch.py
 │   ├── oakd_detection_bench.launch.py
@@ -102,30 +107,28 @@ billiebot_ws/src/billiebot_sensors_tests/
 │   ├── audio_capture_bench.launch.py
 │   └── audio_classifier_bench.launch.py
 ├── billiebot_sensor_tests/
-│   ├── topic_rate_monitor.py
-│   ├── test_manifest_node.py
-│   ├── oakd_bench_publisher.py
-│   ├── oakd_preview_overlay.py
-│   ├── thermal_colorizer.py
-│   ├── image_quality_monitor.py
-│   ├── audio_capture_node.py
-│   └── classifier_diagnostics.py
-├── scripts/
-│   ├── run_sensor_test.py
-│   ├── export_ros_images.py
-│   ├── analyze_oakd_depth.py
-│   ├── analyze_thermal_frame.py
-│   ├── analyze_noir_image.py
-│   ├── analyze_audio.py
-│   ├── score_oakd_detector.py
-│   ├── score_thermal_blob.py
-│   └── score_audio_classifier.py
+│   ├── common/            # shared infra: result_dir, manifest, config, rate_stats,
+│   │                       # rate_monitor, image_hash, circular_stats, bag_reader,
+│   │                       # launch_helpers, preflight, ground_truth_marker, report
+│   ├── orchestrate/        # test_registry, run_sensor_test, finalize_check
+│   ├── oakd/                # oakd_bench_publisher, oakd_preview_overlay, metrics,
+│   │                         # analyze_oakd_depth, detection_scoring, score_oakd_detector
+│   ├── thermal/              # thermal_colorizer, metrics, analyze_thermal_frame,
+│   │                          # blob_scoring, score_thermal_blob
+│   ├── noir/                  # image_quality_monitor, metrics, analyze_noir_image
+│   └── audio/                  # audio_capture_node, metrics, analyze_audio,
+│                                 # classifier_scoring, score_audio_classifier
 └── test/
+    ├── fixtures/    # common_, oakd_, thermal_, noir_, audio_fixtures.py
+    ├── test_common_metrics.py
     ├── test_oakd_metrics.py
     ├── test_thermal_metrics.py
     ├── test_noir_metrics.py
-    └── test_audio_metrics.py
+    ├── test_audio_metrics.py
+    └── test_launch_files.py
 ```
+
+> **Implementation note:** the shipped layout co-locates the CLI (`analyze_*`/`score_*.py`) with the pure-metric modules and the ROS acquisition nodes inside each sensor's own subpackage, rather than using separate top-level `analysis/`/`scripts/` directories — hardware imports stay lazy and scoped to acquisition-node files only, so this still satisfies "analysis code never imports hardware libraries." Every script is an installed `console_scripts` entry point, not a loose file under `scripts/`. `topic_rate_monitor.py`/`test_manifest_node.py` became `common/rate_monitor.py` (class `TopicRateMonitorNode`) and `common/manifest.py` (class `ManifestWriter`, invoked from a launch-time `OpaqueFunction` rather than a standalone node); `classifier_diagnostics.py`'s responsibility is met by `/bench/audio_classifier/status`, published directly by the production `audio_classifier` node (§8.2) rather than a separate bench node.
 
 ### 3.2 Common launch arguments
 
@@ -177,6 +180,8 @@ operator_notes: ""
 
 `metrics.json` should provide machine-readable pass/fail results. Every analysis script should exit `0` on pass and nonzero on failure.
 
+> **Implementation note:** `manifest.yaml`'s `parameters:` field is currently always written as `{}` — the effective ROS parameters used by each launch are not yet captured into the manifest, despite §10.1/§10.4 requiring this. This is an open gap, not a design choice; closing it means threading the resolved launch-argument values (or a `ros2 param dump`-equivalent) into `common/manifest.py`'s `write_initial()` call. The shipped manifest does capture more than this minimal example otherwise: `repository_dirty`, `config_file`, `end_time_utc`, `exit_code`, `software_versions`, and `detected_hardware_interfaces` keys are also present.
+
 ### 3.4 Foxglove connection procedure
 
 1. Start the applicable bench launch on the Jetson or Raspberry Pi.
@@ -190,6 +195,8 @@ operator_notes: ""
 
 5. Add the panels specified by the individual test.
 6. Save a Foxglove layout named `BillieBot Sensor Bench` so it can be reused.
+
+> **Implementation note:** step 6 is already done for you — import the shipped layout instead of building one by hand: `foxglove/billiebot_sensor_bench.json`, installed to `share/billiebot_sensor_tests/foxglove/`. It is one shared layout (a Tab panel with an OAK-D/Thermal/NoIR/Audio tab plus a shared `/bench/status` + Log strip) covering every test in this document, not a per-test layout.
 
 Foxglove is a qualitative visualization tool in this plan. Numeric acceptance is determined by recorded data and analysis scripts.
 
@@ -205,6 +212,8 @@ Implement one reusable `topic_rate_monitor.py` node that:
 - writes periodic diagnostics and a final JSON file;
 - publishes a test status topic such as `/bench/status` at 1 Hz;
 - exits nonzero if a required topic never appears or violates a configured threshold.
+
+> **Implementation note:** shipped as `common/rate_monitor.py`'s `TopicRateMonitorNode`, configured per launch file via a JSON-encoded `topics_config_json` parameter (topic name, message type, required flag, optional `min_rate_hz`, optional `hash_enabled` for repeated-frame detection). Its exit code (when run standalone via `ros2 run`) reflects pass/fail, but the authoritative signal every launch actually relies on is the `exports/topic_rate_monitor.json` file it writes, read back by `orchestrate/finalize_check.py`.
 
 ---
 
@@ -278,6 +287,8 @@ The current production `oakd_dog_detector` publishes dog detections and `/dog/fo
 
 The acquisition node should use the device calibration rather than hard-coded intrinsics. It should expose resolution, FPS, stereo preset, left-right check, subpixel, extended disparity, and depth alignment as parameters.
 
+> **Implementation note:** shipped as `oakd/oakd_bench_publisher.py` (class `OakdBenchPublisher`). It reads device calibration via `readCalibration()` and exposes `fps`, `lr_check`, `subpixel`, `extended_disparity`, `depth_align`, `sensor_serial`, and `point_cloud_stride` as parameters, matching the production node's stereo/color resolution and `HIGH_DENSITY` preset rather than exposing `resolution`/`stereo_preset` as separate configurable parameters — an open gap if independent resolution/preset sweeps are ever needed for this test.
+
 ### Launch-file outline
 
 `oakd_unit_bench.launch.py` should:
@@ -292,7 +303,7 @@ The acquisition node should use the device calibration rather than hard-coded in
 Example intended command:
 
 ```bash
-ros2 launch billiebot_tests oakd_unit_bench.launch.py \
+ros2 launch billiebot_sensor_tests oakd_unit_bench.launch.py \
   results_dir:=$HOME/billiebot_test_results/UT-OAK-01 \
   duration_sec:=60 \
   record_bag:=true \
@@ -324,6 +335,8 @@ The automated analysis should check:
 - point-cloud width/height and finite XYZ fraction;
 - device or queue errors in `console.log`.
 
+> **Implementation note:** `oakd/analyze_oakd_depth.py --profile stream` checks topic presence, dimensions/encoding, and rate/gap/monotonicity (via `common/rate_stats.py`, using header timestamps). It does not yet compute the RGB/depth timestamp offset, the invalid-depth-pixel fraction, or the point-cloud finite-XYZ fraction as part of this profile (the invalid-pixel-fraction math itself exists in `oakd/metrics.py`'s `valid_pixel_fraction()` and is exercised by the `--profile accuracy` path for UT-OAK-02, just not wired into the stream profile here), and it does not scan `console.log` for device/queue errors. These are open gaps for a more complete UT-OAK-01 analysis pass.
+
 ### Pass/fail criteria
 
 Pass if all of the following are true:
@@ -336,6 +349,8 @@ Pass if all of the following are true:
 - The device does not reset or disconnect.
 
 A USB 2 connection is not automatically a failure at 5 Hz, but it should be reported as a warning because it can limit later high-rate operation.
+
+> **Implementation note:** the first four criteria above are programmatically checked; "scene recognizable"/"geometrically coherent" remain qualitative Foxglove review as the spec intends. Device-reset/disconnect detection and the USB-2-vs-USB-3 warning are not automated — `common/preflight.py` captures `lsusb -t` output for manual review, but no analysis code parses it or gates on it yet (this is a general pattern across every sensor's preflight, not specific to OAK-D — see the cross-cutting note in §10.1).
 
 ---
 
@@ -378,6 +393,8 @@ Use the UT-OAK-01 launch with a `test_mode:=flat_target` argument. Record at lea
 
 The authoritative numeric record should be the rosbag2 data or `.npz`, not a colorized image.
 
+> **Implementation note:** rosbag2 is the authoritative record, as specified — but `analyze_oakd_depth.py` does not currently export a representative RGB PNG, depth `.npz`, or point cloud to `exports/` on its own; the bag itself remains the only artifact written. This is an open gap, shared across UT-OAK-01/02, UT-THM-01/02, and UT-NIR-01/02 (see the cross-cutting note in §10.1) — an operator can extract representative frames from the bag manually in the meantime.
+
 ### Analysis-script outline
 
 `analyze_oakd_depth.py` should:
@@ -406,6 +423,8 @@ The authoritative numeric record should be the rosbag2 data or `.npz`, not a col
 10. Generate a histogram, depth heatmap, plane-residual plot, and Markdown report.
 
 Plane fitting is preferred over only taking the standard deviation of `z`, because even a small target tilt produces a real depth gradient that is not sensor noise.
+
+> **Implementation note:** implemented in `oakd/metrics.py` (`fit_plane_svd` via `numpy.linalg.svd`, `point_to_plane_rmse`, `plane_normal_angle_deg`, `robust_std_mad` = 1.4826×MAD, `percentiles`, `fraction_within_band`) and `oakd/analyze_oakd_depth.py --profile accuracy`. The target ROI is a CLI-supplied axis-aligned rectangle (`--roi <path-to-json>` with `x0,y0,x1,y1`), not an interactive polygon-selection tool, and the selected ROI is only persisted if the operator saves that JSON file themselves — there is no automatic "save the selected ROI" step. Plane distance from the camera is not separately reported (only the fitted centroid/normal/RMSE/angle).
 
 ### Pass/fail criteria at 2.0 m
 
@@ -440,27 +459,30 @@ Use the UT-OAK-01 setup. The chassis and robot TF tree are not required. `dog_lo
 
 DepthAI detection coordinates are normalized. The current production code converts `xmin`, `ymin`, and the width/height differences directly to integers, which can produce zero-valued bounding boxes. Before final acceptance, Codex should scale these values by the 416 × 416 preview dimensions or publish normalized coordinates in a message explicitly designed for them. The test scorer should fail if a positive detection has a nonpositive bounding-box width or height.
 
+> **Implementation note — resolved:** fixed in `oakd_dog_detector.py` via a new module-level pure function `scale_bbox(xmin, ymin, xmax, ymax, frame_w=416, frame_h=416)` (rounds + clamps the normalized coordinates to pixel space), called unconditionally from `real_detect()` — this is a correctness fix with no parameter gating it, per Appendix B-11. `score_oakd_detector.py`'s `valid_bbox_fraction` check is the regression test proving it stays fixed.
+
 ### Recommended test-only additions to the production node
 
 Add optional parameters that default off in deployment:
 
 ```yaml
-publish_preview: true
-publish_annotated_preview: true
-publish_depth_preview: true
-publish_diagnostics: true
+publish_preview: false          # bench detection-bench launch overrides to true
+publish_depth_preview: false    # bench detection-bench launch overrides to true
+publish_diagnostics: false      # bench detection-bench launch overrides to true
 ```
 
 Recommended topics:
 
-- `/oak/rgb/preview`
-- `/oak/rgb/annotated`
-- `/oak/depth/preview`
+- `/oak/rgb/preview` — published by `oakd_dog_detector` when `publish_preview:=true`
+- `/oak/rgb/annotated` — **published by the bench package**, not the production node (see below)
+- `/oak/depth/preview` — published by `oakd_dog_detector` when `publish_depth_preview:=true`
 - `/dog/detections_3d`
 - `/dog/found`
-- `/bench/oakd_detector/diagnostics`
+- `/bench/oakd_detector/diagnostics` — published by `oakd_dog_detector` when `publish_diagnostics:=true`
 
 The preview should come from the same DepthAI pipeline and frame sequence that feeds the spatial detector.
+
+> **Implementation note:** the shipped defaults are `false` for all three params (matching "default off in deployment" literally — the original draft's `true` defaults above were an error in the initial spec). There is no `publish_annotated_preview` parameter on the production node at all: annotation is done entirely bench-side by `oakd/oakd_preview_overlay.py`, which subscribes to `/oak/rgb/preview` + `/dog/detections_3d` and draws the bbox outline in pure numpy (no cv2 dependency), publishing `/oak/rgb/annotated` itself. This keeps the production node's only new behavior at "stream two more topics," not "run drawing code."
 
 ### Launch-file outline
 
@@ -472,6 +494,8 @@ The preview should come from the same DepthAI pipeline and frame sequence that f
 4. Launch a scorer-assist node that records `/dog/found`, detections, confidence, bounding boxes, and depth with timestamps.
 5. Launch Foxglove bridge.
 6. Accept a ground-truth segment file or provide a service/keyboard interface for the operator to mark `dog_present`, distance, orientation, and test condition.
+
+> **Implementation note:** step 4's "scorer-assist node" is the rosbag2 recording itself (item 3) plus the offline `oakd/score_oakd_detector.py` CLI, run after the session ends — there is no separate live node computing scores during the recording; this matches the plan's own principle that pass/fail is always derived from recorded data, not a live process. Step 6 is implemented as a stdin-driven interface: `common/ground_truth_marker.py`'s `ground_truth_marker_node` reads lines typed by the operator in the form `mark <label> [key=value ...]` (e.g. `mark dog_present distance=1.5m orientation=front condition=normal_light`), timestamps each with the ROS clock, and appends a row to `exports/ground_truth_segments.csv` — not a new ROS service.
 
 ### Test scenes
 
@@ -523,6 +547,8 @@ At selected distances, repeat with:
 - maximum reliable distance.
 
 Define a distance as **reliably detected** when the detector reports Billie in at least 80% of sampled cycles for that segment. Report both the 80% characterization limit and the stricter system recall metric.
+
+> **Implementation note:** implemented in `oakd/detection_scoring.py` (`align_detections_to_segments`, `compute_detection_metrics`) and `oakd/score_oakd_detector.py`, matching this list closely, with two simplifications: "detection confidence distribution" is reported as an aggregate (via the pass/fail gate on required-vs-provisional thresholds), not a saved histogram/distribution object; and `bbox_w > 0 and bbox_h > 0` is asserted for every confident detection (`valid_bbox_fraction`) — this is the regression check proving the §5.3 bounding-box scaling fix actually landed.
 
 ### Pass/fail criteria
 
@@ -590,7 +616,7 @@ Also run a direct Python smoke test that initializes `adafruit_mlx90640`, reads 
 Example intended command:
 
 ```bash
-ros2 launch billiebot_tests thermal_unit_bench.launch.py \
+ros2 launch billiebot_sensor_tests thermal_unit_bench.launch.py \
   results_dir:=$HOME/billiebot_test_results/UT-THM-01 \
   duration_sec:=60 \
   record_bag:=true
@@ -618,6 +644,8 @@ For every `/thermal/image` frame, verify:
 - rate and maximum frame gap;
 - number and percentage of read errors from logs.
 
+> **Implementation note:** `thermal/analyze_thermal_frame.py --profile stream` checks dimensions/encoding, finite-pixel fraction, and rate/gap (via `thermal.dimensions`/`thermal.encodings` in `sensor_bench.yaml` and `common/rate_stats.py`). It does not currently compute per-frame min/mean/max/std, and it does not parse `console.log` for MLX90640 read-error counts — open gaps.
+
 ### Pass/fail criteria
 
 - `i2cdetect` reports address `0x33`.
@@ -626,6 +654,8 @@ For every `/thermal/image` frame, verify:
 - Temperature values are physically plausible for the room and warm target.
 - Sustained frame-read failure rate is below 1%.
 - The hand or other warm target is visibly localized in Foxglove.
+
+> **Implementation note:** rate and finite-pixel criteria are programmatically gated (required tier in `sensor_bench.yaml`). The `i2cdetect` address check and the sustained-read-failure-rate check are not — `common/preflight.py` captures `i2cdetect -y 1` output for the operator to read, but no analysis code parses or gates on it (same cross-cutting pattern noted for OAK-D in §5.1 and tracked in §10.1).
 
 ---
 
@@ -690,6 +720,8 @@ Record in `manifest.yaml`:
 4. Compute temporal noise per pixel from the stationary sequences.
 5. Generate raw heatmaps, ROI overlays, time histories, and histograms.
 6. Explicitly report reference uncertainty and avoid claiming sensor calibration accuracy tighter than the reference setup supports.
+
+> **Implementation note:** implemented in `thermal/metrics.py` (`target_background_bias`, `contrast_to_noise_ratio`, `pooled_cnr`, `temporal_noise`, `drift`) and `thermal/analyze_thermal_frame.py --profile contrast`, taking `--ref-target-c`/`--ref-background-c` and rectangular `--target-roi`/`--background-roi` (`x0,y0,x1,y1`) CLI arguments — same rectangle-not-polygon simplification as OAK-D's ROI (§5.2). No plots are generated (heatmaps/overlays/histories/histograms are an open gap, consistent with the export gap noted in §5.2), and there is no `--ref-uncertainty-c` argument or automatic "characterization only" labeling when reference uncertainty exceeds 1 °C — item 6 and the corresponding pass/fail carve-out below are not yet implemented; an operator must currently judge this manually from the recorded reference-instrument notes in `manifest.yaml`.
 
 ### Pass/fail criteria
 
@@ -766,6 +798,8 @@ Keep the camera fixed and place Billie approximately centered first. Off-axis ch
 - identify maximum distance meeting the configured detection-fraction threshold;
 - save representative true-positive, false-positive, and false-negative frames.
 
+> **Implementation note:** implemented in `thermal/blob_scoring.py` (`associate_blob_to_frame`, `compute_blob_metrics`) and `thermal/score_thermal_blob.py`, matching this outline closely — `thermal_node.py` itself is deliberately unmodified (per §6.3's own framing, the bench characterizes the existing global-threshold algorithm rather than replacing it). The one gap: representative TP/FP/FN frames are not saved to `exports/`, only the aggregate metrics.
+
 ### Pass/fail criteria
 
 Provisional initial gates:
@@ -839,6 +873,8 @@ Expected sensor identification should include the Camera Module 3/IMX708 family.
 - Compute mean luminance, black clipping fraction, white clipping fraction, and variance of Laplacian.
 - Inspect logs for libcamera/Picamera2 timeouts.
 
+> **Implementation note:** dimensions/encoding/rate/gap/repeated-frame-fraction are checked in `noir/analyze_noir_image.py --profile stream` (repeated-frame hashing via `common/image_hash.py`'s `repeated_frame_hash`, same average-hash function used across all sensors). Mean luminance and black/white clipping fraction are computed **live** instead, by `noir/image_quality_monitor.py`'s `ImageQualityMonitorNode`, published continuously to `/bench/noir/diagnostics` for Foxglove viewing during the run — they are not recomputed offline in the stream profile. Variance-of-Laplacian sharpness (`noir/metrics.py`'s `laplacian_variance`) is only computed in UT-NIR-02's quality profile, not here. Log inspection for libcamera/Picamera2 timeouts is not automated.
+
 ### Pass/fail criteria
 
 - Camera enumerates and `rpicam-still` creates a valid image.
@@ -847,6 +883,8 @@ Expected sensor identification should include the Camera Module 3/IMX708 family.
 - No frame gap exceeds 1.0 s.
 - The image is recognizable and focused under normal indoor light.
 - No sustained camera timeout or capture error occurs.
+
+> **Implementation note:** the rate/gap/repeat-fraction criteria are programmatically gated; sustained-timeout detection is not (same cross-cutting preflight-only pattern as §5.1/§6.1, tracked in §10.1).
 
 ---
 
@@ -883,6 +921,8 @@ Camera Module 3 supports autofocus. The current `noir_cam_node` does not explici
 
 Test defaults should use continuous autofocus for scene setup, then optionally lock focus for repeatable captures.
 
+> **Implementation note — resolved:** `noir_cam_node.py` gained a pure function `build_camera_config(width, height, af_mode='', af_trigger=False, lens_position=-1.0, exposure_time_us=-1, analogue_gain=-1.0, frame_duration_limits_us=None)` where every sentinel means "don't touch" — with all args at their sentinel it returns byte-identical output to the original hardcoded `create_still_configuration()` call (proven by `test_build_camera_config_matches_current_default()`). New params `af_mode`, `af_trigger`, `lens_position`, `exposure_time_us`, `analogue_gain`, `frame_duration_us`, and `publish_metadata` all default off/sentinel. When `publish_metadata:=true`, `capture_metadata()` is published to `/bench/noir/diagnostics`. Colour gains/white balance state are not separately exposed as a settable parameter (only reported via `capture_metadata()`'s own keys when metadata publishing is on).
+
 ### Capture procedure
 
 For each lighting condition:
@@ -912,6 +952,8 @@ For each lighting condition:
 - temporal brightness and sharpness stability;
 - exposure, gain, and lens-position stability;
 - optional line-spread/edge-response metrics if the chart supports them.
+
+> **Implementation note:** implemented in `noir/metrics.py` (`contrast_to_noise_ratio`, `laplacian_variance` via a hand-rolled 3×3 kernel — no cv2/scipy, `clipping_fraction`, `temporal_stability` for the CoV checks) and `noir/analyze_noir_image.py --profile quality`, which combines multiple `--capture-dir`/`--condition` runs (one per lighting condition) into one report. Two simplifications versus this outline: (1) black/white patches are the fixed outer left/right thirds of the frame rather than an operator-configurable chart ROI (no `--target-roi`/`--background-roi` equivalent exists for NoIR yet, unlike OAK-D/thermal), and gray-patch spatial noise is not separately computed; (2) although `noir_cam_node.py` can now publish exposure/gain/lens-position metadata (`publish_metadata:=true`, see above), `analyze_noir_image.py` does not yet consume `/bench/noir/diagnostics` from the bag to compute exposure/gain/lens-position stability — that metadata is currently visible only via live Foxglove review, not folded into the quality-profile metrics. Line-spread/edge-response metrics remain unimplemented, consistent with their "optional" status in this spec.
 
 ### Pass/fail criteria
 
@@ -1002,6 +1044,8 @@ The production `audio_classifier` does not publish raw audio. Implement `audio_c
 
 `audio_capture_bench.launch.py` should launch the capture node, diagnostics, optional recorder, and Foxglove bridge. Foxglove waveform plotting is optional; the WAV and offline plots are the primary evidence.
 
+> **Implementation note:** shipped as `audio/audio_capture_node.py` (class `AudioCaptureNode`), reusing the production package's `billiebot_audio.audio_device.resolve_input_device` for stable device selection (see §8.2's DoA/device-resolution notes) — a genuinely continuous `sounddevice.InputStream` feeding a bounded `queue.Queue`, never a blocking `sd.rec()`. Its `/bench/audio/diagnostics` topic reports device name, sample rate, channel count, overflow count, and blocks-written continuously, but does **not** report live RMS/peak/clipping — those are computed offline by `analyze_audio.py` from the saved WAV, not streamed live. No raw-audio ROS topic is published (the doc's own item already frames this as optional "if that dependency is adopted" — it was not adopted).
+
 ### Export to MacBook
 
 Copy the WAV files to the MacBook, for example:
@@ -1029,6 +1073,8 @@ Listen using QuickTime Player, VLC, Audacity, or another normal audio player. Re
 - optional mains-hum energy around 50/60 Hz and harmonics.
 
 For speech/impulse recordings, calculate signal-to-background ratio using `ambient.wav` as the noise reference.
+
+> **Implementation note:** implemented in `audio/metrics.py` (`rms_dbfs`, `peak_dbfs`, `clipping_fraction`, `dc_offset`, `channel_correlation`, `mains_hum_energy` via `numpy.fft`, no scipy) and `audio/analyze_audio.py`, using Python's `wave` module. Not yet implemented: zero/silent-sample fraction, channel RMS imbalance (only correlation is computed), waveform/spectrogram plots (`analyze_audio.py` produces no plots at all today), and the ambient-referenced signal-to-background-ratio calculation for speech/impulse recordings — each WAV is scored independently. These are open gaps for a more complete UT-AUD-01 analysis pass.
 
 ### Pass/fail criteria
 
@@ -1078,6 +1124,8 @@ The current node creates a 0.5 s timer but performs a blocking 0.975 s recording
 
 `/audio/events` should remain event-driven.
 
+> **Implementation note — resolved (with one field gap):** the continuous-capture refactor is implemented in `audio_classifier.py` almost exactly as prescribed — a new `AudioRingBuffer` class (new file `billiebot_audio/audio_ring_buffer.py`, a `threading.Lock`-guarded circular `np.float32` buffer) is filled by a `sounddevice.InputStream` callback on its own PortAudio thread; the existing 0.5 s ROS timer now does a near-instant `read_last(...)` followed by synchronous TFLite inference (bounded, tens of ms — safe to block on, unlike the old 0.975 s capture). New param `continuous_capture` defaults **`true`** (a deliberate exception to "defaults off" — the old blocking-capture path is a confirmed non-functional bug, not a working baseline worth preserving as the default; `continuous_capture:=false` reproduces it verbatim as `_real_classify_legacy_blocking()`, an explicit rollback). `/bench/audio_classifier/status` (`publish_status`, default `true`) is published every cycle as a `diagnostic_msgs/DiagnosticArray` with `cycle_timestamp_monotonic_s`, `inference_duration_s`, `energy_db`, `passed_energy_gate`, `top_label`, `top_score`, and `buffer_overrun_count`. The one gap versus this list: explicit audio-window start/end timestamps are not separately reported (only the cycle timestamp, which approximates the window's end).
+
 ### Current speech behavior
 
 `AudioEvent.msg` has BARK, WHINE, HOWL, LOUD_NOISE, and SILENCE; it has no SPEECH enum. The current code maps every confident non-dog YAMNet class to `LOUD_NOISE` while retaining the original class in `yamnet_label`. Therefore, under the current interface the expected result for human speech is:
@@ -1097,6 +1145,8 @@ If BillieBot requires an explicit human-speech class, that is a separate interfa
 4. optionally save the raw input WAV for every trial;
 5. launch a ground-truth marker service or consume a segment CSV;
 6. launch Foxglove bridge for status plots.
+
+> **Implementation note:** items 1, 3, 5, and 6 are implemented as described (production `audio_classifier` via `replicate_production_node`, rosbag2 recording of both topics, the same stdin-driven `ground_truth_marker_node` used for DT-OAK-01/DT-THM-01, Foxglove bridge). Item 4 — saving a per-trial raw WAV clip — is not implemented; the continuous bag recording is the only audio evidence retained.
 
 ### Test dataset and procedure
 
@@ -1133,6 +1183,8 @@ After prerecorded testing, perform a short live-Billie confirmation using natura
 - calculate confidence and energy distributions by class and distance;
 - preserve representative false positives and false negatives with their WAV clips.
 
+> **Implementation note:** implemented in `audio/classifier_scoring.py` (`precision_recall_f1`, `latency_stats`, `label_distribution`; a pure `confusion_matrix` function also exists and is unit-tested) and `audio/score_audio_classifier.py --profile classification`. Status-cycle frequency is measured independently of `/audio/events` via `common/rate_stats.py` on `/bench/audio_classifier/status` (this is the regression check proving the continuous-capture refactor actually reaches ~2 Hz). Bark precision/recall/F1, false-bark rate on non-bark segments, and event latency are all computed and gated. Gaps versus this outline: the full multi-class confusion matrix (BARK/WHINE-HOWL/LOUD_NOISE/no-event) is not wired into the scoring CLI's output even though the pure function backing it exists; confidence/energy are not broken down by class-and-distance (only aggregated); and representative false-positive/false-negative WAV clips are not preserved separately from the full session bag.
+
 ### Pass/fail criteria
 
 - Processing status averages 1.8–2.2 Hz with no audio-buffer overflows.
@@ -1154,6 +1206,8 @@ Verify XVF3800 direction-of-arrival output independently from audio classificati
 
 The production code currently searches USB VID/PID `0x2886:0x0018`, associated with an earlier ReSpeaker family. Current Seeed XVF3800 ROS 2 documentation identifies the XVF3800 with product ID `0x001A`. Codex should not simply replace one constant without validation; it should enumerate the connected device and use the official XVF3800 host-control API or supported ROS 2 driver.
 
+> **Implementation note — resolved:** `audio_classifier.py`'s `_get_doa()` now enumerates all connected USB devices (`usb.core.find(find_all=True)`) and resolves the DoA-capable device via a new pure function `resolve_doa_device(candidates, product_substring)`: it prefers a device whose product-name string matches `doa_usb_product_substring` (new param, default `'XVF3800'`), and only falls back to the legacy `0x2886:0x0018` VID:PID if no name match is found — so hardware that happened to enumerate under the old ID never regresses. This did not replace one hardcoded constant with another, per the concern raised here.
+
 ### Procedure
 
 1. Mount the array in a fixed orientation and mark its defined 0° forward direction.
@@ -1171,6 +1225,8 @@ Use circular statistics:
 - circular absolute error relative to ground truth;
 - percentage within ±15°;
 - dropout or default-zero fraction.
+
+> **Implementation note:** implemented in `common/circular_stats.py` (`circular_abs_error_deg`, correctly handling the 0°/360° wraparound — e.g. true=359°, measured=1° ⇒ error=2°, not 358°; also `circular_mean_deg`/`circular_std_deg` as general-purpose functions) and `audio/score_audio_classifier.py --profile doa`, which pairs each `/audio/events.doa_deg` sample against the operator's marked bearing (`orientation=<deg>` in the stdin ground-truth grammar). Mean absolute circular error and the within-±15° fraction are computed and gated. Two simplifications: the circular mean/std of the raw *measured* DoA values themselves is not reported (only the error relative to ground truth); and "dropout or default-zero fraction" is reported as a boolean (`doa_all_zero`, true only if every sample was exactly 0°) rather than a fraction of zero/dropout samples.
 
 ### Pass/fail criteria
 
@@ -1231,6 +1287,13 @@ The implementation prompt generated from this plan should require the following 
 - Add unit tests using synthetic arrays/WAV files for every analysis script.
 - Avoid changing production defaults solely for bench visualization; expose optional parameters that default off.
 
+> **Implementation notes — cross-cutting gaps found across every test in this document, tracked here once rather than repeated per section:**
+> 1. **Preflight results do not gate pass/fail anywhere.** `common/preflight.py` runs and saves the prescribed hardware/software preflight commands (`lsusb`, `i2cdetect -y 1`, `rpicam-hello --list-cameras`, `arecord -l`/`-L`, the DepthAI/picamera2/sounddevice smoke-test one-liners) to `exports/preflight.json` and `console.log` for every Type 1 test, but no `analyze_*`/`score_*` CLI parses that output to programmatically enforce the "device enumerates," "i2cdetect reports 0x33," or "no sustained read/capture error" pass/fail criteria stated throughout §5–§8. These remain manual/qualitative checks today.
+> 2. **`manifest.yaml`'s `parameters:` field is always `{}`.** Effective ROS parameters are never captured, despite this being an explicit, repeated requirement (see the §3.3 note above and §10.4 below).
+> 3. **No analysis CLI exports representative frames.** Despite §1.1 item 4 and the individual test procedures repeatedly requiring a representative RGB PNG / depth `.npz` / thermal `.npz` / NoIR PNG+`.npy` to be written to `exports/`, none of `analyze_oakd_depth.py`, `analyze_thermal_frame.py`, or `analyze_noir_image.py` currently does this — the rosbag2 recording is the only artifact produced beyond WAV files (audio) and the ground-truth CSV. An operator can extract representative frames from the bag manually with `common/bag_reader.py`'s `BagReader` in the meantime.
+>
+> Resolving all three is a reasonable next PR; none of them block a first hardware bench run, since the bag remains the authoritative record either way.
+
 ## 10.2 Data-unit requirements
 
 - OAK depth encoding must state whether values are millimetres or metres.
@@ -1255,25 +1318,29 @@ The implementation prompt generated from this plan should require the following 
 - Use deterministic random seeds for analysis tests.
 - Do not overwrite prior results; use timestamped directories.
 
+> **Implementation note:** commands are saved (`manifest.yaml`'s `launch_command`); parameters are not yet (§10.1 gap #2 above). Ground-truth segments are saved (`exports/ground_truth_segments.csv`); ROIs are only saved if the operator manually writes the JSON/CLI-arg file themselves (§5.2/§6.2/§7.2 notes) — no automatic ROI persistence exists yet. The Foxglove layout is shipped (`foxglove/billiebot_sensor_bench.json`, §3.4 note). Deterministic seeds are used throughout `test/fixtures/*` (`numpy.random.default_rng(seed)` with explicit integer seeds). `BenchResultDir.create()` raises if `results_dir` already exists and is non-empty, and `run_sensor_test`'s default results directory is UTC-timestamped — prior results are never silently overwritten.
+
 ---
 
 # 11. Known Repository Findings Relevant to These Tests
 
 The test suite should explicitly confirm or expose the following current-code observations:
 
-| Area | Current observation | Test implication |
-|---|---|---|
-| OAK-D preview | Production detector publishes detections and found flag, not images | Add optional preview/diagnostic outputs for bench use |
-| OAK-D bounding box | Normalized DepthAI coordinates are cast directly to integers | Detection test should fail nonpositive bounding boxes until scaling is corrected |
-| OAK-D model | `perception.yaml` supplies `/home/sean/billiebot/models/yolov8n_416.blob`; node now fails loud if missing | Preflight should verify this exact effective path |
-| Thermal algorithm | One node publishes raw image and performs global warm-pixel thresholding | Blob test must distinguish algorithm limitations from sensor health |
-| Thermal display | Raw topic is `32FC1` | Add a colorizer for Foxglove but retain raw float data |
-| NoIR detector | No production node consumes `/noir/image` | Do not invent a Type 2 test yet |
-| NoIR focus | Current node does not explicitly set AF controls or publish metadata | Image-quality test should add AF/exposure diagnostics |
-| Audio model | `audio.yaml` currently has an empty `model_path` | Real classifier test cannot start until assets are staged/configured |
-| Audio cadence | 0.975 s blocking record in a 0.5 s timer | Refactor to continuous capture/ring buffer before enforcing 2 Hz |
-| Audio speech class | No SPEECH enum; non-dog classes map to LOUD_NOISE | Score raw `yamnet_label` and document interface behavior |
-| XVF3800 DoA | Production code uses older ReSpeaker USB ID | Enumerate hardware and use XVF3800-supported API/driver |
+| Area | Current observation | Test implication | Status (as of `19f8513`) |
+|---|---|---|---|
+| OAK-D preview | Production detector publishes detections and found flag, not images | Add optional preview/diagnostic outputs for bench use | **Resolved** — `publish_preview`/`publish_depth_preview`/`publish_diagnostics` params, default off (§5.3) |
+| OAK-D bounding box | Normalized DepthAI coordinates are cast directly to integers | Detection test should fail nonpositive bounding boxes until scaling is corrected | **Resolved** — `scale_bbox()`, unconditional, Appendix B-11 (§5.3) |
+| OAK-D model | `perception.yaml` supplies `/home/sean/billiebot/models/yolov8n_416.blob`; node now fails loud if missing | Preflight should verify this exact effective path | **Open** — fail-loud behavior predates this package (GAP-11); preflight does not independently re-verify the effective `model_path` |
+| Thermal algorithm | One node publishes raw image and performs global warm-pixel thresholding | Blob test must distinguish algorithm limitations from sensor health | **Resolved (by design)** — `thermal_node.py` deliberately unmodified; DT-THM-01 characterizes the existing behavior (§6.3, §5b of the implementation record) |
+| Thermal display | Raw topic is `32FC1` | Add a colorizer for Foxglove but retain raw float data | **Resolved** — `thermal/thermal_colorizer.py`, raw topic untouched |
+| NoIR detector | No production node consumes `/noir/image` | Do not invent a Type 2 test yet | **Unchanged, as intended** — still no Type 2 NoIR test |
+| NoIR focus | Current node does not explicitly set AF controls or publish metadata | Image-quality test should add AF/exposure diagnostics | **Partially resolved** — optional AF/exposure/gain/metadata params implemented, default off (§7.2); the quality-profile analysis CLI does not yet consume the published metadata |
+| Audio model | `audio.yaml` currently has an empty `model_path` | Real classifier test cannot start until assets are staged/configured | **Partially resolved** — `model_path`/class-map validation is now fail-loud (`sys.exit(1)`) instead of a soft warning; `audio.yaml`'s `model_path` is still empty by design and must be staged by the operator |
+| Audio cadence | 0.975 s blocking record in a 0.5 s timer | Refactor to continuous capture/ring buffer before enforcing 2 Hz | **Resolved** — `AudioRingBuffer` + continuous `InputStream`, `continuous_capture` default `true` (§8.2) |
+| Audio speech class | No SPEECH enum; non-dog classes map to LOUD_NOISE | Score raw `yamnet_label` and document interface behavior | **Resolved** — unchanged interface, documented and scored as-is in `score_audio_classifier.py` (§8.2) |
+| XVF3800 DoA | Production code uses older ReSpeaker USB ID | Enumerate hardware and use XVF3800-supported API/driver | **Resolved** — `resolve_doa_device()` enumeration with legacy-ID fallback (§8.3) |
+
+Formally closing the GAP-tracker entries this table references (Appendix B-11, B-14) — updating `DISCREPANCY_RESOLUTION_PLAN.md` §2/§4, `BRINGUP_LADDER_ANALYSIS.md` Appendix B, and `MBSE_SYSTEM_DECOMPOSITION.md` §5.4, then closing the corresponding GitHub issues — is a separate follow-up PR per the repo's own three-location-plus-issue update rule, not done as part of this package.
 
 ---
 
