@@ -4,7 +4,7 @@ audio_classifier:
     mock: false
     publish_rate_hz: 2.0
     confidence_threshold: 0.3
-    model_path: ""
+    model_path: /var/lib/billiebot/models/yamnet.tflite
     sample_rate: 16000
     chunk_duration_sec: 0.975
     device_index: -1
