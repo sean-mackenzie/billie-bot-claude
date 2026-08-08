@@ -55,7 +55,7 @@ class ThermalNode(Node):
 
             i2c = board.I2C()
             self._mlx = adafruit_mlx90640.MLX90640(i2c)
-            self._mlx.refresh_rate = adafruit_mlx90640.RefreshRate.REFRESH_4_HZ
+            self._mlx.refresh_rate = adafruit_mlx90640.RefreshRate.REFRESH_8_HZ
             self._frame = [0.0] * 768  # 32x24
             self.timer = self.create_timer(
                 1.0 / self.publish_rate, self.real_publish
