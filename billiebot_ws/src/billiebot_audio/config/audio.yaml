@@ -8,7 +8,9 @@ audio_classifier:
     sample_rate: 16000
     chunk_duration_sec: 0.975
     device_index: -1
-    energy_threshold_db: -30.0
+    input_channels: 2
+    classification_channel: 1
+    energy_threshold_db: -40.0
 
 speaker_node:
   ros__parameters:

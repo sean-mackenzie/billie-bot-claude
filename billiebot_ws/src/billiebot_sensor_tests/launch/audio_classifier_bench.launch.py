@@ -48,12 +48,19 @@ def generate_launch_description():
 
     actions = declare_common_bench_args(default_duration_sec='0')
     actions += [
-        DeclareLaunchArgument('model_path', default_value=''),
+        DeclareLaunchArgument('test_id', default_value='DT-AUD-01'),
+        DeclareLaunchArgument('model_path', default_value='/var/lib/billiebot/models/yamnet.tflite'),
         DeclareLaunchArgument('device_name_substring', default_value='XVF3800'),
         DeclareLaunchArgument('continuous_capture', default_value='true'),
     ]
 
-    actions.append(manifest_bootstrap_action('DT-AUD-01', 'audio', 'reSpeaker XVF3800'))
+    actions.append(
+        manifest_bootstrap_action(
+            LaunchConfiguration('test_id'),
+            'audio',
+            'reSpeaker XVF3800'
+        )
+    )
 
     actions.append(replicate_production_node(
         'billiebot_audio', 'audio_classifier', production_config,

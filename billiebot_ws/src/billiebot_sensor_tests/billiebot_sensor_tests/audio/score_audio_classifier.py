@@ -113,7 +113,7 @@ def _run_classification_profile(bag, cfg, result_dir) -> dict:
             t_ns, m = seg_events[0]
             predicted_labels.append(_EVENT_TYPE_NAMES.get(m.event_type, 'LOUD_NOISE'))
             true_labels.append(true_label)
-            latencies.append(max((t_ns - seg['t_end_ns']) / 1e9, 0.0))
+            latencies.append(max((t_ns - seg['t_start_ns']) / 1e9, 0.0))
         elif true_label != 'SILENCE':
             predicted_labels.append('NO_EVENT')
             true_labels.append(true_label)

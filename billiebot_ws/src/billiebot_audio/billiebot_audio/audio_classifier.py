@@ -79,7 +79,9 @@ class AudioClassifier(Node):
         self.declare_parameter('sample_rate', 16000)
         self.declare_parameter('chunk_duration_sec', 0.975)
         self.declare_parameter('device_index', -1)
-        self.declare_parameter('energy_threshold_db', -30.0)
+        self.declare_parameter('input_channels', 2)
+        self.declare_parameter('classification_channel', 1)
+        self.declare_parameter('energy_threshold_db', -40.0)
         # continuous_capture default True per plan decision (confirmed with user): the old
         # blocking path is a confirmed non-functional bug, not a working baseline worth
         # preserving as the default. Set to false for an explicit rollback.
@@ -96,6 +98,23 @@ class AudioClassifier(Node):
         self.energy_threshold_db = float(
             self.get_parameter('energy_threshold_db').value
         )
+        
+        self.input_channels = int(
+            self.get_parameter('input_channels').value
+            )
+        self.classification_channel = int(
+            self.get_parameter('classification_channel').value
+        )
+
+        if self.input_channels < 1:
+            raise ValueError('input_channels must be at least 1')
+
+        if not 0 <= self.classification_channel < self.input_channels:
+            raise ValueError(
+                f'classification_channel={self.classification_channel} is invalid '
+                f'for input_channels={self.input_channels}'
+            )
+        
         self.continuous_capture = bool(self.get_parameter('continuous_capture').value)
         self.publish_status = bool(self.get_parameter('publish_status').value)
         self.device_name_substring = str(self.get_parameter('device_name_substring').value)
@@ -209,16 +228,28 @@ class AudioClassifier(Node):
         device = self._resolve_input_device()
 
         capacity_samples = sample_rate * 3  # a few seconds of headroom
+
+        # YAMNet consumes a mono waveform, so keep the ring buffer mono.
+        # The XVF3800 itself is opened with all configured input channels,
+        # then classification_channel selects which one is sent to YAMNet.
         self._ring_buffer = AudioRingBuffer(capacity_samples, channels=1)
 
         def _callback(indata, _frames, _time_info, status):
-            self._ring_buffer.write(indata[:, 0].copy(), overflowed=bool(status))
+            selected_channel = indata[:, self.classification_channel]
+            self._ring_buffer.write(
+                selected_channel.copy(),
+                overflowed=bool(status)
+            )
 
         self._stream = sd.InputStream(
-            samplerate=sample_rate, channels=1, dtype='float32', device=device,
+            samplerate=sample_rate,
+            channels=self.input_channels,
+            dtype='float32',
+            device=device,
             callback=_callback,
         )
         self._stream.start()
+
 
     def real_classify(self):
         """Capture audio chunk and run YAMNet classification. Dispatches to the
@@ -290,9 +321,25 @@ class AudioClassifier(Node):
         if energy_db < self.energy_threshold_db:
             return result
         result['passed_energy_gate'] = True
+        
+        waveform = waveform.astype(np.float32)
+        expected_shape = tuple(int(v) for v in self._input_details[0]['shape'])
 
-        input_data = np.expand_dims(waveform, axis=0).astype(np.float32)
-        self._interpreter.set_tensor(self._input_details[0]['index'], input_data)
+        if waveform.shape == expected_shape:
+            input_data = waveform
+        elif (1, waveform.shape[0]) == expected_shape:
+            input_data = waveform[np.newaxis, :]
+        else:
+            raise ValueError(
+                f'YAMNet input shape mismatch: model expects {expected_shape}, '
+                f'waveform is {waveform.shape}'
+            )
+
+        self._interpreter.set_tensor(
+            self._input_details[0]['index'],
+            input_data
+        )
+        
         self._interpreter.invoke()
         scores = self._interpreter.get_tensor(self._output_details[0]['index'])
 
