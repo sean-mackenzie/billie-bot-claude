@@ -394,15 +394,14 @@ class AudioClassifier(Node):
         self.status_pub.publish(arr)
 
     def _get_doa(self) -> float:
-        """Query a DoA-capable USB device for Direction of Arrival. Enumerates connected
-        devices instead of assuming a single hardcoded VID:PID (Appendix B-14) -- see
-        resolve_doa_device()."""
+        """Query the XVF3800 for Direction of Arrival using its DOA_VALUE command."""
         try:
             import usb.core
             import usb.util
 
             raw_devices = list(usb.core.find(find_all=True))
             candidates = []
+
             for dev in raw_devices:
                 product_name = ''
                 try:
@@ -412,19 +411,39 @@ class AudioClassifier(Node):
                 candidates.append(UsbDeviceInfo(dev.idVendor, dev.idProduct, product_name))
 
             chosen = resolve_doa_device(candidates, self.doa_usb_product_substring)
+            
             if chosen is None:
                 return 0.0
+            
             dev = raw_devices[candidates.index(chosen)]
-            doa = dev.ctrl_transfer(
-                usb.util.CTRL_IN | usb.util.CTRL_TYPE_VENDOR
+
+            response = dev.ctrl_transfer(
+                usb.util.CTRL_IN 
+                | usb.util.CTRL_TYPE_VENDOR
                 | usb.util.CTRL_RECIPIENT_DEVICE,
-                0, 21, 0, 8
+                0,
+                0x80 | 18,   # XVF3800 DOA_VALUE read command
+                20,          # GPO servicer resource ID
+                5,           # status + 2 uint16 values
+                100000,
             )
-            if len(doa) >= 2:
-                return float(int.from_bytes(doa[:2], 'little'))
-        except Exception:
-            pass
-        return 0.0
+
+            raw = bytes(response)
+
+            if len(raw) >= 5 and raw[0] == 0:
+                doa_deg = int.from_bytes(
+                    raw[1:3], 
+                    byteorder='little'
+                )
+
+                if 0 <= doa_deg <= 359:
+                    return float(doa_deg)
+
+            return 0.0
+
+        except Exception as e:
+            self.get_logger().warning(f'DoA query failed: {e}')
+            return 0.0
 
     def mock_classify(self):
         """Publish synthetic audio events for testing."""
