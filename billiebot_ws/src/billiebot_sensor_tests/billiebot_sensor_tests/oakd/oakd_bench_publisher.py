@@ -5,6 +5,7 @@ does not publish. `depthai` is imported lazily so this module (and the package's
 collection) never requires DepthAI hardware/library on a dev machine.
 """
 
+import array
 import sys
 
 import numpy as np
@@ -134,7 +135,6 @@ class OakdBenchPublisher(Node):
         return info
 
     def _real_publish(self):
-        stamp = self.get_clock().now().to_msg()
         try:
             rgb_frame = self._rgb_queue.get()
             depth_frame = self._depth_queue.get()
@@ -142,8 +142,11 @@ class OakdBenchPublisher(Node):
             self.get_logger().warning(f'OAK-D queue read error: {e}')
             return
 
+        stamp = self.get_clock().now().to_msg()
+
         rgb_cv = rgb_frame.getCvFrame()
         h, w = rgb_cv.shape[0], rgb_cv.shape[1]
+
         rgb_msg = Image()
         rgb_msg.header.stamp = stamp
         rgb_msg.header.frame_id = self.camera_frame
@@ -152,12 +155,14 @@ class OakdBenchPublisher(Node):
         rgb_msg.encoding = 'bgr8'
         rgb_msg.is_bigendian = False
         rgb_msg.step = w * 3
-        rgb_msg.data = rgb_cv.tobytes()
+        rgb_msg.data = array.array('B', rgb_cv.tobytes())
+
         self.rgb_pub.publish(rgb_msg)
         self.rgb_info_pub.publish(self._camera_info(w, h, self.camera_frame))
 
         depth_arr = depth_frame.getFrame()  # uint16, millimetres, DepthAI native units
         dh, dw = depth_arr.shape[0], depth_arr.shape[1]
+
         depth_msg = Image()
         depth_msg.header.stamp = stamp
         depth_msg.header.frame_id = self.camera_frame
@@ -166,7 +171,8 @@ class OakdBenchPublisher(Node):
         depth_msg.encoding = '16UC1'
         depth_msg.is_bigendian = False
         depth_msg.step = dw * 2
-        depth_msg.data = depth_arr.astype(np.uint16).tobytes()
+        depth_msg.data = array.array('B', depth_arr.tobytes())
+
         self.depth_pub.publish(depth_msg)
         self.depth_info_pub.publish(self._camera_info(dw, dh, self.camera_frame))
 
@@ -184,12 +190,18 @@ class OakdBenchPublisher(Node):
         valid = z > 0
         x = (xs - cx) * z / fx
         y = (ys - cy) * z / fy
-        points = np.stack([x[valid], y[valid], z[valid]], axis=-1)
+
+        points = np.stack(
+            [x[valid], y[valid], z[valid]],
+            axis=-1
+        ).astype(np.float32, copy=False)
 
         header = Header()
         header.stamp = stamp
         header.frame_id = self.camera_frame
-        cloud_msg = point_cloud2.create_cloud_xyz32(header, points.tolist())
+
+        cloud_msg = point_cloud2.create_cloud_xyz32(header, points)
+
         self.points_pub.publish(cloud_msg)
 
     def _publish_diagnostics(self):
