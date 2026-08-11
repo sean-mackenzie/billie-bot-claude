@@ -32,10 +32,19 @@ DDS are never required.
 
 - The BillieBot ROS 2 workspace built and sourced on the target host (Jetson or Pi 5).
 - Hardware-specific Python libraries staged on that host (see repo-root
-  `docs/md/INSTALLATION_AND_SETUP.md` and `docker/Dockerfile`): `depthai` (Jetson),
-  `adafruit-circuitpython-mlx90640` + Blinka (Pi 5, thermal), `picamera2` (Pi 5, NoIR),
-  `sounddevice`/`pyusb`/`tflite-runtime` (Pi 5, audio). None of these are required to
-  build this package or run its non-hardware unit tests.
+  `docs/md/INSTALLATION_AND_SETUP.md` and `docker/Dockerfile`): `depthai==2.32.0.0`
+  (Jetson), `adafruit-circuitpython-mlx90640` + Blinka (Pi 5, thermal), `picamera2`
+  (Pi 5, NoIR), `sounddevice`/`pyusb`/`tflite-runtime` (Pi 5, audio). None of these are
+  required to build this package or run its non-hardware unit tests.
+- Two pins apply on **both** hosts and are not optional: `numpy==1.26.4` (the
+  `tflite-runtime`/`depthai` wheels are built against the NumPy 1.x ABI — 2.x breaks them
+  at import) and `depthai==2.32.0.0` (`oakd_bench_publisher.py` and the production
+  `oakd_dog_detector.py` use the DepthAI v2 API; 3.x is a breaking rewrite neither is
+  ported to). The audio preflight records the installed NumPy version in
+  `exports/preflight.json` so a drifted host is visible in the evidence.
+- apt tooling the preflight step shells out to: `usbutils` for `lsusb` (Jetson — OAK-D;
+  Pi 5 — XVF3800) and `i2c-tools` for `i2cdetect` (Pi 5 — MLX90640). Neither is in the
+  stock `ros:humble` image.
 - For DT-AUD-01/02: a staged `yamnet.tflite` + `yamnet_class_map.csv` in the same
   directory, with `model_path` set in `billiebot_audio/config/audio.yaml` or passed as a
   launch argument (`model_path:=/path/to/yamnet.tflite`) — the production node exits
@@ -137,7 +146,9 @@ When a test fails, check in this order:
 
 1. **Hardware/wiring** — preflight (`exports/preflight.json`, `console.log`) shows the
    device didn't enumerate (`lsusb`, `i2cdetect`, `rpicam-hello --list-cameras`,
-   `arecord -l`).
+   `arecord -l`). A `returncode: -1` with a `No such file or directory` stderr is *not* an
+   enumeration failure — the tool itself is missing (`usbutils` for `lsusb`, `i2c-tools`
+   for `i2cdetect`); install it and re-run before concluding anything about the hardware.
 2. **Host driver/library** — preflight succeeds but the node logs an import/init error
    (missing `depthai`/`picamera2`/`adafruit_mlx90640`/`sounddevice`, or a `sys.exit(1)`
    fail-loud message naming a missing model/class-map file).

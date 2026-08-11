@@ -30,6 +30,10 @@ _PREFLIGHT_COMMANDS = {
         ['arecord', '-l'],
         ['arecord', '-L'],
         ['python3', '-c', 'import sounddevice as sd; print(sd.query_devices())'],
+        # Recorded, not gated: tflite-runtime is built against the NumPy 1.x ABI, so a
+        # host that drifted off the pin explains a classifier that never starts.
+        ['python3', '-c',
+         'import numpy; print("numpy", numpy.__version__, "(expected 1.26.4)")'],
     ],
 }
 

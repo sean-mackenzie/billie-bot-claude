@@ -83,6 +83,19 @@ A MacBook running Foxglove Studio is used only as a visualization workstation. I
 - Do not force Billie to bark or remain in an uncomfortable test position. Use prerecorded Billie bark samples for repeatable classifier characterization and use live barks only as a final confirmation.
 - Keep hot reference objects at safe temperatures and away from Billie.
 
+### 2.3 Host software prerequisites (pinned)
+
+Both bench hosts must carry these before any test in this document is run. `docs/md/INSTALLATION_AND_SETUP.md` Appendix A remains the canonical dependency list; the four entries below are called out here because a bench run silently misreports without them.
+
+| Requirement | Host | Why it is pinned / required |
+|---|---|---|
+| `numpy==1.26.4` (pip) | Jetson + Pi 5 | The `tflite-runtime` and `depthai` wheels are compiled against the NumPy **1.x** ABI. An unpinned install now resolves to NumPy 2.x and those imports fail at load time, which surfaces as a classifier or OAK-D node that never starts. Recorded by the audio preflight (§8.1). |
+| `depthai==2.32.0.0` (pip) | Jetson | `oakd/oakd_bench_publisher.py` and the production `oakd_dog_detector.py` are written against the DepthAI **v2** API. DepthAI 3.x is a breaking rewrite and neither node is ported to it, so the pin — not a migration — is the supported configuration. Reported by the OAK-D preflight (§5.1). |
+| `usbutils` (apt) | Jetson + Pi 5 | Supplies `lsusb`, which `common/preflight.py` runs for the OAK-D (`lsusb`, `lsusb -t`, §5.1) and the XVF3800 (`lsusb`, §8.1). Absent from the stock `ros:humble` image. |
+| `i2c-tools` (apt) | Pi 5 | Supplies `i2cdetect`, the I²C counterpart used by the MLX90640 preflight (`i2cdetect -y 1`, §6.1). |
+
+Because no preflight result gates pass/fail (§10.1 note 1), a missing `usbutils`/`i2c-tools` does **not** fail a test — it records a `No such file or directory` error in `exports/preflight.json` where a device inventory should be. Confirm these are installed before treating an empty preflight as a hardware fault.
+
 ---
 
 ## 3. Common Software Test Architecture
@@ -266,10 +279,13 @@ lsusb -t
 python3 -c "import depthai as dai; print(dai.__version__); print(dai.Device.getAllAvailableDevices())"
 ```
 
+`lsusb` and `lsusb -t` come from the `usbutils` apt package (§2.3); if it is not installed, both commands record a `No such file or directory` error instead of a USB inventory.
+
 Preflight acceptance:
 
 - The OAK-D appears in the USB inventory.
 - `lsusb -t` reports a SuperSpeed connection when possible rather than a 480 Mbit/s USB 2 fallback.
+- `dai.__version__` reports the pinned `2.32.0.0` (§2.3). A 3.x version means the host is on the unsupported API and the OAK-D nodes will not run.
 - DepthAI reports exactly one intended device and can open it without a permission or XLink error.
 
 ### Required test-node behavior
@@ -450,7 +466,7 @@ Use the UT-OAK-01 setup. The chassis and robot TF tree are not required. `dog_lo
 
 ### Production-software preconditions
 
-- `depthai` is installed.
+- `depthai==2.32.0.0` is installed (§2.3) — the v2 API the node is written against; it is not ported to DepthAI 3.x.
 - The YOLO blob exists at the configured path, currently `/home/sean/billiebot/models/yolov8n_416.blob` in `perception.yaml`.
 - The launch is run with `mock:=false`.
 - The production node exits nonzero if the model or device is missing.
@@ -1008,7 +1024,10 @@ lsusb
 arecord -l
 arecord -L
 python3 -c "import sounddevice as sd; print(sd.query_devices())"
+python3 -c "import numpy; print('numpy', numpy.__version__, '(expected 1.26.4)')"
 ```
+
+`lsusb` comes from the `usbutils` apt package (§2.3). The NumPy line is recorded, not gated: a version other than the pinned `1.26.4` explains a `tflite-runtime`/`depthai` import failure in DT-AUD-01 and elsewhere, and is worth resolving before trusting any audio result.
 
 The ALSA card number can change between boots. Scripts should resolve the device by a stable card/device name containing `XVF3800` or `reSpeaker`, not by assuming `card 2` or `card 4`.
 
@@ -1288,7 +1307,7 @@ The implementation prompt generated from this plan should require the following 
 - Avoid changing production defaults solely for bench visualization; expose optional parameters that default off.
 
 > **Implementation notes — cross-cutting gaps found across every test in this document, tracked here once rather than repeated per section:**
-> 1. **Preflight results do not gate pass/fail anywhere.** `common/preflight.py` runs and saves the prescribed hardware/software preflight commands (`lsusb`, `i2cdetect -y 1`, `rpicam-hello --list-cameras`, `arecord -l`/`-L`, the DepthAI/picamera2/sounddevice smoke-test one-liners) to `exports/preflight.json` and `console.log` for every Type 1 test, but no `analyze_*`/`score_*` CLI parses that output to programmatically enforce the "device enumerates," "i2cdetect reports 0x33," or "no sustained read/capture error" pass/fail criteria stated throughout §5–§8. These remain manual/qualitative checks today.
+> 1. **Preflight results do not gate pass/fail anywhere.** `common/preflight.py` runs and saves the prescribed hardware/software preflight commands (`lsusb`, `i2cdetect -y 1`, `rpicam-hello --list-cameras`, `arecord -l`/`-L`, the DepthAI/picamera2/sounddevice smoke-test one-liners, and the NumPy version line added for audio in §8.1) to `exports/preflight.json` and `console.log` for every Type 1 test, but no `analyze_*`/`score_*` CLI parses that output to programmatically enforce the "device enumerates," "i2cdetect reports 0x33," or "no sustained read/capture error" pass/fail criteria stated throughout §5–§8. These remain manual/qualitative checks today.
 > 2. **`manifest.yaml`'s `parameters:` field is always `{}`.** Effective ROS parameters are never captured, despite this being an explicit, repeated requirement (see the §3.3 note above and §10.4 below).
 > 3. **No analysis CLI exports representative frames.** Despite §1.1 item 4 and the individual test procedures repeatedly requiring a representative RGB PNG / depth `.npz` / thermal `.npz` / NoIR PNG+`.npy` to be written to `exports/`, none of `analyze_oakd_depth.py`, `analyze_thermal_frame.py`, or `analyze_noir_image.py` currently does this — the rosbag2 recording is the only artifact produced beyond WAV files (audio) and the ground-truth CSV. An operator can extract representative frames from the bag manually with `common/bag_reader.py`'s `BagReader` in the meantime.
 >
