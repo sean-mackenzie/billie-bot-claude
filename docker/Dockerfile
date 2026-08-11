@@ -32,12 +32,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libportaudio2 \
     libusb-1.0-0 \
     i2c-tools \
+    # usbutils provides lsusb, shelled out to by billiebot_sensor_tests'
+    # common/preflight.py for the OAK-D and XVF3800 USB preflight (i2c-tools is
+    # the I2C counterpart, used for the MLX90640's i2cdetect preflight)
+    usbutils \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Python packages used by the nodes (no requirements.txt exists in-repo) -
+# numpy is pinned to the 1.x ABI that tflite-runtime and depthai are built against;
+# depthai is pinned to 2.32.0.0 because the OAK-D nodes use the v2 API -- do not bump
+# to 3.x without porting oakd_dog_detector.py and oakd/oakd_bench_publisher.py.
 RUN pip3 install --no-cache-dir \
-    pyserial numpy sounddevice pyusb depthai \
+    pyserial numpy==1.26.4 sounddevice pyusb depthai==2.32.0.0 \
     pyyaml jinja2 matplotlib fastapi uvicorn markdown \
     tflite-runtime
 

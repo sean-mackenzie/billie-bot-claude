@@ -162,19 +162,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-foxglove-bridge \
     ros-humble-rviz2 \
     ros-humble-teleop-twist-keyboard \
+    # --- billiebot_sensor_tests: rosbag2 (authoritative bench recording) and
+    # diagnostic_msgs (bench status/diagnostics topics) are pulled in transitively by
+    # nav2/slam_toolbox today, but are declared explicitly here since
+    # billiebot_sensor_tests depends on them directly, not on navigation ---
+    ros-humble-rosbag2 \
+    ros-humble-diagnostic-msgs \
     # --- build & system tools ---
     python3-pip \
     python3-colcon-common-extensions \
+    python3-pytest \
     alsa-utils \
     libportaudio2 \
     libusb-1.0-0 \
     i2c-tools \
+    # usbutils provides lsusb, shelled out to by billiebot_sensor_tests'
+    # common/preflight.py for the OAK-D and XVF3800 USB preflight (i2c-tools is
+    # the I2C counterpart, used for the MLX90640's i2cdetect preflight)
+    usbutils \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Python packages used by the nodes (no requirements.txt exists in-repo) -
+# numpy is pinned to the 1.x ABI that tflite-runtime and depthai are built against;
+# depthai is pinned to 2.32.0.0 because the OAK-D nodes use the v2 API -- do not bump
+# to 3.x without porting oakd_dog_detector.py and oakd/oakd_bench_publisher.py.
 RUN pip3 install --no-cache-dir \
-    pyserial numpy sounddevice pyusb depthai \
+    pyserial numpy==1.26.4 sounddevice pyusb depthai==2.32.0.0 \
     pyyaml jinja2 matplotlib fastapi uvicorn markdown \
     tflite-runtime
 
@@ -193,6 +207,8 @@ CMD ["bash"]
 
 Notes:
 - `tflite-runtime` publishes arm64 Linux wheels for Python 3.10 (Ubuntu 22.04). If `pip` ever fails to find it, substitute `tensorflow` — the audio node falls back to `tf.lite` automatically (`billiebot_audio/audio_classifier.py`).
+- **The two version pins are deliberate, not cosmetic.** `numpy==1.26.4` keeps the NumPy **1.x** ABI that the `tflite-runtime` and `depthai` wheels are compiled against — an unpinned `numpy` now resolves to 2.x and those imports fail at load time ([Appendix C](#appendix-c--troubleshooting)). `depthai==2.32.0.0` keeps the **v2** DepthAI API that `oakd_dog_detector.py` and `billiebot_sensor_tests`' `oakd_bench_publisher.py` are written against; DepthAI 3.x is a breaking rewrite and the OAK-D nodes have **not** been ported to it. Apply the same two pins on every machine (§2.2.2 Jetson, §2.3.3 Pi, [Appendix A](#appendix-a--complete-dependency-reference)).
+- `usbutils` supplies `lsusb`, which `billiebot_sensor_tests/common/preflight.py` runs for the OAK-D (`lsusb`, `lsusb -t`) and the ReSpeaker XVF3800 (`lsusb`) USB preflight; it is *not* installed in the stock `ros:humble` base image. `i2c-tools` is its I²C counterpart, supplying `i2cdetect` for the MLX90640 preflight. Without them, preflight records a `FileNotFoundError` instead of a device inventory and no test fails — so install both wherever bench tests run.
 - `picamera2` and `adafruit-blinka`/`adafruit-circuitpython-mlx90640` are deliberately **not** installed here — they are Raspberry-Pi-only. The NoIR and thermal nodes fall back to mock mode on the Mac.
 
 **Step 2 — Build the image** (~5–10 min, ~6 GB):
@@ -256,8 +272,8 @@ apt-get update && apt-get install -y --no-install-recommends \
   ros-humble-robot-localization ros-humble-rplidar-ros ros-humble-behaviortree-cpp \
   ros-humble-robot-state-publisher ros-humble-joint-state-publisher ros-humble-xacro \
   ros-humble-rmw-cyclonedds-cpp ros-humble-foxglove-bridge \
-  python3-pip python3-colcon-common-extensions libportaudio2 alsa-utils && \
-pip3 install pyserial numpy sounddevice pyusb depthai pyyaml jinja2 \
+  python3-pip python3-colcon-common-extensions libportaudio2 alsa-utils usbutils && \
+pip3 install pyserial numpy==1.26.4 sounddevice pyusb depthai==2.32.0.0 pyyaml jinja2 \
   matplotlib fastapi uvicorn markdown tflite-runtime && \
 mkdir -p /var/lib/billiebot/snapshots /var/lib/billiebot/reports && \
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -515,9 +531,11 @@ jetson$ sudo apt install -y \
   ros-humble-robot-localization ros-humble-rplidar-ros ros-humble-behaviortree-cpp \
   ros-humble-robot-state-publisher ros-humble-joint-state-publisher ros-humble-xacro \
   ros-humble-rmw-cyclonedds-cpp ros-humble-foxglove-bridge \
-  python3-pip python3-colcon-common-extensions
-jetson$ pip3 install pyserial numpy depthai pyyaml
+  python3-pip python3-colcon-common-extensions usbutils
+jetson$ pip3 install pyserial numpy==1.26.4 depthai==2.32.0.0 pyyaml
 ```
+
+The two pins are the same ones the Mac container uses, for the same reasons (§1.3 notes): NumPy **1.x** ABI for the `depthai` wheel, and the **v2** DepthAI API the OAK-D nodes are written against — DepthAI 3.x is a breaking rewrite they are not ported to. `usbutils` supplies the `lsusb`/`lsusb -t` used by the OAK-D preflight in `billiebot_sensor_tests`.
 
 **Verify:** `source /opt/ros/humble/setup.bash && ros2 pkg prefix rplidar_ros` prints `/opt/ros/humble`.
 
@@ -642,7 +660,7 @@ In Raspberry Pi Imager: choose *Raspberry Pi OS Lite (64-bit)*, your SD card, an
 ```bash
 pi$ sudo apt update && sudo apt full-upgrade -y
 pi$ sudo raspi-config nonint do_i2c 0          # enable I²C
-pi$ sudo apt install -y i2c-tools alsa-utils
+pi$ sudo apt install -y i2c-tools alsa-utils usbutils   # i2cdetect (MLX90640) + lsusb (XVF3800) preflight
 pi$ sudo usermod -aG i2c,audio,video,dialout $USER
 ```
 
@@ -685,10 +703,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rmw-cyclonedds-cpp \
     python3-pip python3-colcon-common-extensions \
-    alsa-utils libportaudio2 libusb-1.0-0 i2c-tools sqlite3 \
+    alsa-utils libportaudio2 libusb-1.0-0 i2c-tools usbutils sqlite3 \
     && rm -rf /var/lib/apt/lists/*
+# numpy is pinned to the 1.x ABI that the tflite-runtime wheel is built against
 RUN pip3 install --no-cache-dir \
-    numpy sounddevice pyusb tflite-runtime \
+    numpy==1.26.4 sounddevice pyusb tflite-runtime \
     adafruit-blinka adafruit-circuitpython-mlx90640 \
     pyyaml jinja2 matplotlib fastapi uvicorn markdown
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -853,7 +872,8 @@ No `requirements.txt` or dependency lockfile exists in the repo; this appendix i
 | `alsa-utils` | Pi (+Mac container for completeness) | `speaker_node` shells out to `aplay plughw:0,0` |
 | `libportaudio2` | Mac, Pi | native library behind `sounddevice` |
 | `libusb-1.0-0` | Mac, Pi | native library behind `pyusb` (ReSpeaker DoA) |
-| `i2c-tools` | Pi | MLX90640 debugging (`i2cdetect`) |
+| `i2c-tools` | Pi (+Mac container) | **I²C**-device preflight/debugging: supplies `i2cdetect`, run by `billiebot_sensor_tests/common/preflight.py` for the MLX90640 (`i2cdetect -y 1`) |
+| `usbutils` | Jetson, Pi (+Mac container) | **USB**-device preflight: supplies `lsusb`, run by `billiebot_sensor_tests/common/preflight.py` for the OAK-D (`lsusb`, `lsusb -t`) and the ReSpeaker XVF3800 (`lsusb`). Not present in the stock `ros:humble` image; without it preflight records a `FileNotFoundError` and nothing fails |
 | `sqlite3` (CLI) | Pi (optional) | inspect `/var/lib/billiebot/billie_events.db` |
 
 ### pip — Python packages
@@ -861,11 +881,11 @@ No `requirements.txt` or dependency lockfile exists in the repo; this appendix i
 | Package | Needed on | Used by |
 |---|---|---|
 | `pyserial` | Mac, Jetson | `billiebot_base/base_bridge.py` (the only pip dep declared in a package.xml) |
-| `numpy` | all | audio + perception |
+| **`numpy==1.26.4`** | all | audio + perception. **Pinned:** the `tflite-runtime` and `depthai` wheels are compiled against the NumPy **1.x** ABI; NumPy 2.x breaks them at import (see [Appendix C](#appendix-c--troubleshooting)) |
 | `sounddevice` | Mac, Pi | `audio_classifier` mic streaming |
 | `tflite-runtime` (fallback: `tensorflow`) | Mac, Pi | YAMNet inference |
 | `pyusb` | Mac, Pi | ReSpeaker DoA (VID 0x2886) |
-| `depthai` | Mac, Jetson | OAK-D pipeline |
+| **`depthai==2.32.0.0`** | Mac, Jetson | OAK-D pipeline. **Pinned:** `oakd_dog_detector.py` and `billiebot_sensor_tests`' `oakd/oakd_bench_publisher.py` use the DepthAI **v2** API. 3.x is a breaking rewrite and neither node is ported to it — do not bump this pin without doing that port |
 | `picamera2` | Pi only — see §2.3 caveat | NoIR camera |
 | `adafruit-blinka`, `adafruit-circuitpython-mlx90640` | Pi | thermal sensor |
 | `pyyaml`, `jinja2`, `matplotlib`, `fastapi`, `uvicorn`, `markdown` | Mac, Pi | cognition: logger, daily report, report server |
@@ -931,6 +951,9 @@ The detector creates a `YoloSpatialDetectionNetwork` with a **416×416** preview
 | `rplidar_node` dies with `*** buffer overflow detected ***` | Upstream `rplidar_ros` 2.0.0 aborts this way instead of printing a readable error when it cannot open the serial port — the message is a red herring, the port is simply missing. Run `ros2 run billiebot_bringup check_devices.sh` to find out why. |
 | Lidar fails to open port | Run `ros2 run billiebot_bringup check_devices.sh`. The lidar is addressed by the by-id path in `billiebot_bringup/config/lidar.yaml`, so this is not an enumeration-order problem — the symlink is missing (unplugged/unpowered), or the adapter reports a different name than the config expects. Compare `ls -l /dev/serial/by-id/` against the config value. |
 | `depthai` raises `X_LINK_DEVICE_NOT_FOUND` | Missing udev rule (§2.2.4 — run `scripts/install_udev_rules.sh`), USB-2 cable/port, or insufficient power. Replug after `udevadm trigger`. |
+| Import fails with `_ARRAY_API not found` / "A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x" (typically from `tflite-runtime` or `depthai`) | NumPy 2.x got installed. Reinstall the pin: `pip3 install 'numpy==1.26.4'`, and check every install site in this guide uses `numpy==1.26.4` ([Appendix A](#appendix-a--complete-dependency-reference)). |
+| `depthai` import or pipeline construction fails with `AttributeError` on `dai.Pipeline()`/node factory calls | DepthAI 3.x is installed. The OAK-D nodes use the v2 API: `pip3 install 'depthai==2.32.0.0'`. |
+| `exports/preflight.json` shows `lsusb` or `i2cdetect` with `returncode: -1` and a `No such file or directory` stderr | The host tool package is missing, not the device: install `usbutils` (`lsusb`) or `i2c-tools` (`i2cdetect`). Preflight never gates pass/fail, so this stays silent until you read the file. |
 | `aplay: audio open error: Device or resource busy` / wrong output | The I²S DAC must be **card 0** (`plughw:0,0` is hardcoded in `speaker_node`): set `dtparam=audio=off` and the DAC overlay, reboot, confirm with `aplay -l`. |
 | YAMNet node logs "No model_path specified" | Expected until Appendix B is done; harmless in mock mode. |
 | `oakd_dog_detector` exits non-zero with "model_path ... is empty or does not exist" | Set the blob path (Appendix B) — real mode treats a missing/empty blob as fatal by design (GAP-11), not a bug. |
