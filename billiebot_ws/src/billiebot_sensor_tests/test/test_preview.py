@@ -228,6 +228,70 @@ def test_points_are_float32_ndarray_not_a_python_list():
     assert points.dtype == np.float32
 
 
+def _data_assignments(module):
+    """Every `<something>.data = <value>` in a module, as (lineno, value_node) pairs."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(module))
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Attribute) and target.attr == 'data':
+                found.append((node.lineno, node.value))
+    return found
+
+
+def _is_array_array_call(value) -> bool:
+    import ast
+
+    return (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+            and value.func.attr == 'array'
+            and isinstance(value.func.value, ast.Name) and value.func.value.id == 'array')
+
+
+@pytest.mark.parametrize('module_path', [
+    'billiebot_sensor_tests.oakd.oakd_bench_publisher',
+    'billiebot_sensor_tests.oakd.oakd_preview_overlay',
+    'billiebot_sensor_tests.common.preview_node',
+    'billiebot_perception.oakd_dog_detector',
+])
+def test_every_image_payload_is_assigned_as_array_array(module_path):
+    """rclpy's generated `data` setter short-circuits on an `array.array` and otherwise walks the
+    whole payload twice in pure Python to validate it -- 238 ms for a 6.2 MB frame, 20 ms for a
+    416x416 one. That cost is what held oakd_bench_publisher at 0.33 Hz before 990a99a, and it
+    reappeared once already in a merge-conflict resolution.
+
+    Checked structurally rather than by string search so a comment mentioning `.tobytes()` cannot
+    satisfy or trip it, and so any newly added publisher payload has to opt in deliberately.
+
+    Deliberately not covered: thermal_node.py and thermal_colorizer.py assign bytes too, but at
+    32x24 that costs 0.13 ms against a 250 ms budget at 4 Hz (0.05%), so they are exempt by
+    measurement rather than oversight. noir_cam_node.py is excluded by project decision.
+    """
+    import importlib
+
+    import ast
+    import importlib
+
+    module = importlib.import_module(module_path)
+    assignments = _data_assignments(module)
+    assert assignments, f'no `.data = ...` assignment found in {module_path}'
+
+    # Only computed payloads are in scope. `found_msg.data = dog_found` / `= True` on a
+    # std_msgs/Bool is a scalar, not a buffer, and must not be flagged.
+    computed = [(lineno, value) for lineno, value in assignments if isinstance(value, ast.Call)]
+    assert computed, f'no computed `.data` payload found in {module_path}'
+
+    offenders = [lineno for lineno, value in computed if not _is_array_array_call(value)]
+    assert not offenders, (
+        f"{module_path}: `.data` assigned a non-array.array payload at line(s) "
+        f"{offenders} -- wrap it as array.array('B', <buf>)"
+    )
+
+
 def test_cloud_message_is_built_from_the_ndarray_directly():
     import inspect
 

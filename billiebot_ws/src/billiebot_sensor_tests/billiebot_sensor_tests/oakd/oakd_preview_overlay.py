@@ -6,6 +6,7 @@ rectangle outline in pure numpy (no cv2 dependency), and publishes /oak/rgb/anno
 Never touches the production detector itself.
 """
 
+import array
 import threading
 
 import numpy as np
@@ -83,7 +84,10 @@ class OakdPreviewOverlay(Node):
         out.encoding = msg.encoding
         out.is_bigendian = msg.is_bigendian
         out.step = msg.step
-        out.data = image.tobytes()
+        # array.array('B', ...) rather than raw bytes -- rclpy's `data` setter validates a bytes
+        # payload byte-by-byte in pure Python (~20 ms for this 416x416 frame, vs 0.02 ms here).
+        # Same mechanism as 990a99a.
+        out.data = array.array('B', image.tobytes())
         self.annotated_pub.publish(out)
 
 

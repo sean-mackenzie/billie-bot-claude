@@ -410,7 +410,9 @@ class OakdBenchPublisher(Node):
         rgb_msg.encoding = 'bgr8'
         rgb_msg.is_bigendian = False
         rgb_msg.step = w * 3
-        rgb_msg.data = rgb_arr.tobytes()
+        # array.array like the real path (990a99a) -- mock is the hardware-free verification
+        # path for this node, so it should not carry a serialization cost the real path doesn't.
+        rgb_msg.data = array.array('B', rgb_arr.tobytes())
         self.rgb_pub.publish(rgb_msg)
 
         depth_arr = np.full((h, w), 2000, dtype=np.uint16)  # flat mock plane at 2.0 m
@@ -422,7 +424,7 @@ class OakdBenchPublisher(Node):
         depth_msg.encoding = '16UC1'
         depth_msg.is_bigendian = False
         depth_msg.step = w * 2
-        depth_msg.data = depth_arr.tobytes()
+        depth_msg.data = array.array('B', depth_arr.tobytes())
         self.depth_pub.publish(depth_msg)
 
         # Mock mode exercises the same preview path as real mode so the previews-on/previews-off
