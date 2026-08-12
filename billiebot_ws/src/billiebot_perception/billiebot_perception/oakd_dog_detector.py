@@ -5,6 +5,7 @@ Real mode: runs depthai pipeline with YOLOv8n for spatial object detection.
 Mock mode: publishes synthetic dog detections at 5 Hz for testing.
 """
 
+import array
 import math
 import os
 import random
@@ -252,7 +253,13 @@ class OakdDogDetector(Node):
             msg.is_bigendian = False
             bytes_per_pixel = 3 if encoding == 'bgr8' else 2
             msg.step = msg.width * bytes_per_pixel
-            msg.data = cv_frame.tobytes()
+            # array.array('B', ...) rather than the raw bytes: rclpy's generated `data` setter
+            # short-circuits on an array.array and otherwise walks every byte twice in pure
+            # Python to validate it. This method is called twice per detector cycle (RGB +
+            # depth preview), so the bytes form costs ~40 ms of the 200 ms budget -- inside
+            # real_detect(), which also publishes /dog/found on its 4.5-5.5 Hz gate. Same
+            # mechanism as the fix in 990a99a.
+            msg.data = array.array('B', cv_frame.tobytes())
             publisher.publish(msg)
         except Exception as e:
             self.get_logger().warning(f'Failed to publish preview frame: {e}')
