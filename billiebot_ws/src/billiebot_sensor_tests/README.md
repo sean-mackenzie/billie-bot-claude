@@ -116,6 +116,100 @@ OAK-D, Thermal, NoIR, Audio, plus a shared `/bench/status` diagnostics strip. Pa
 topics not currently published simply show no data. Foxglove is qualitative evidence only
 — numeric pass/fail always comes from `metrics.json`.
 
+## Visualization topics vs. authoritative data
+
+**The rule:** high-rate/high-volume raw sensor topics are *authoritative data products*,
+intended for local rosbag2 recording and quantitative analysis. Remote visualization uses
+dedicated downsampled, colorized, compressed and/or rate-limited `/bench/.../preview` topics.
+Pass/fail always comes from the raw data; a preview topic must never gate a result.
+
+### Why raw streams overwhelm a remote Foxglove connection
+
+`foxglove_bridge` serves a WebSocket client over Wi-Fi and enforces a `send_buffer_limit`
+(10 MB by default). When a client cannot keep up, the bridge **drops messages for that client**
+rather than applying back-pressure to the publisher. Local subscribers — rosbag2, the rate
+monitor — are entirely unaffected, so the sensor keeps running at full rate while the remote
+panel appears frozen. The OAK-D raw set alone is far past what any Wi-Fi link can carry:
+
+| Old default Foxglove subscription | Payload | Rate | Data rate |
+|---|---|---|---|
+| `/bench/oakd/rgb/image_raw` 1920×1080 `bgr8` | 6.22 MB | 5 Hz | 248.8 Mbit/s |
+| `/bench/oakd/depth/image_raw` 640×400 `16UC1` | 512 kB | 5 Hz | 20.5 Mbit/s |
+| `/bench/oakd/points` stride 4 (16 000 pts) | 192 kB | 5 Hz | 7.7 Mbit/s |
+| **total** | | | **≈ 277 Mbit/s** |
+
+This was observed on a UT-OAK-02 run: all three topics published at ~5.0 Hz, rosbag2 recorded
+~279 messages each over ~55 s (~3 GiB bag), `topic_rate_monitor.json` passed — yet Foxglove
+received ~4–5 messages per topic (~0.12 Hz).
+
+> **Poor Foxglove rate does not imply poor sensor/ROS publication rate.** They are independent
+> measurements of different things.
+
+### Diagnosing it
+
+1. `exports/topic_rate_monitor.json` — the authoritative rate evidence. This is what the sensor
+   actually published, measured on the sensor host.
+2. `ros2 bag info <results_dir>/bag` — message counts and duration per topic, recorded locally.
+3. Only then look at Foxglove's per-panel rate.
+
+If (1) and (2) are healthy and Foxglove is not, it is a **transport/visualization** problem, not
+a sensor or acquisition problem. Do not relax an acceptance threshold in response.
+
+### OAK-D visualization topics
+
+These are what the shipped Foxglove layout subscribes to. All are `sensor_msgs/CompressedImage`
+(JPEG) except the point cloud, which is `sensor_msgs/PointCloud2`.
+
+| Topic | Test | Size | Rate | Compression | Payload |
+|---|---|---|---|---|---|
+| `/bench/oakd/rgb/preview/compressed` | UT-OAK-01/02 | 640×360 | 5 Hz | JPEG q70 | ~37 KiB |
+| `/bench/oakd/depth/preview/compressed` | UT-OAK-01/02 | 320×200 | 5 Hz | JPEG q70, colorized 0.1–5.0 m | ~4–10 KiB |
+| `/bench/oakd/points_preview` | UT-OAK-01/02 | stride 16 (~1 000 pts) | 2 Hz | — | ~12 kB |
+| `/bench/oakd_detector/rgb/preview/compressed` | DT-OAK-01 | 416×416 | 5 Hz | JPEG q70 | ~27 KiB |
+| `/bench/oakd_detector/annotated/preview/compressed` | DT-OAK-01 | 416×416 | 5 Hz | JPEG q70 | ~27 KiB |
+| `/bench/oakd_detector/depth/preview/compressed` | DT-OAK-01 | 320×200 | 5 Hz | JPEG q70, colorized | ~4 KiB |
+
+The UT-OAK preview set totals **≈ 1.8–2.1 Mbit/s against the old ≈ 277 Mbit/s — a ~130× reduction.**
+
+The raw topics are unchanged and still recorded, still rate-gated, still the only thing analysis
+reads. To inspect them deliberately in Foxglove, add a panel by hand — but expect the bandwidth
+above, and prefer replaying the bag locally instead.
+
+**The depth preview is not valid for quantitative depth analysis.** It is 8-bit colorized and
+clipped to the display range; invalid pixels (`0` mm) and out-of-range pixels are painted black.
+UT-OAK-02's accuracy math always reads raw `16UC1` millimetres from the bag.
+
+### Overriding the defaults
+
+Previews are on by default and independently disableable. Acquisition, recording, rate gating,
+and analysis are identical either way:
+
+```bash
+# turn the whole visualization path off
+ros2 launch billiebot_sensor_tests oakd_unit_bench.launch.py \
+  results_dir:=... start_visualization_previews:=false
+
+# tune resolution / rate / quality
+ros2 launch billiebot_sensor_tests oakd_unit_bench.launch.py results_dir:=... \
+  preview_width:=960 preview_height:=540 preview_jpeg_quality:=85 \
+  depth_preview_min_m:=0.3 depth_preview_max_m:=3.0 \
+  points_preview_stride:=8 points_preview_rate_hz:=1.0
+
+# uncompressed downsampled Image instead of CompressedImage (no Pillow required)
+ros2 launch billiebot_sensor_tests oakd_unit_bench.launch.py \
+  results_dir:=... preview_format:=raw
+```
+
+The shipped defaults are also recorded under `oakd.visualization` in `config/sensor_bench.yaml`.
+That block is documentation, deliberately **not** a threshold: nothing about a preview lives in
+`thresholds.required` or `thresholds.provisional`, so no visualization setting can move a
+pass/fail boundary.
+
+Other sensors' bench topics are small enough that they still go to Foxglove directly (thermal
+`32FC1` is ~3 kB/frame; NoIR `rgb8` 640×480 is ~921 kB/frame). `bench_preview_node` is
+sensor-agnostic and configured entirely through two JSON parameters, so migrating them is a
+launch-file and layout change with no new node code.
+
 ## Result-directory format
 
 ```text
@@ -164,6 +258,12 @@ When a test fails, check in this order:
 7. **Environmental limitation** — explicitly called out in the test plan (e.g. dark-no-IR
    for NoIR, reference-thermometer uncertainty >1°C for thermal) — the report labels these
    "characterization only" and they don't fail the run.
+8. **Visualization transport** — Foxglove panels are frozen or stuttering, but
+   `exports/topic_rate_monitor.json` passes and `ros2 bag info` shows the expected message
+   counts. This is **not a test failure at all**: the sensor, ROS, and the recording are healthy
+   and the run's evidence is intact. A Foxglove panel is subscribed to a raw high-bandwidth topic
+   instead of its `/bench/.../preview` counterpart — re-import the shipped layout. See
+   "Visualization topics vs. authoritative data" above.
 
 ## Which tests require live hardware vs. run from fixtures
 
@@ -197,7 +297,12 @@ smoke check.
 5. Add synthetic fixtures to `test/fixtures/` and a `test/test_<sensor>_metrics.py` case
    for every new metric function.
 6. Add the new topics to `foxglove/billiebot_sensor_bench.json` if useful for live
-   visualization.
+   visualization — but **never point a Foxglove panel at a high-volume raw topic**. Anything
+   above roughly 1 Mbit/s over the remote link (any camera image at rate, any point cloud)
+   gets a `/bench/.../preview` counterpart instead: add a `bench_preview_node` to the launch
+   file with the source topic in `image_sources_json`/`depth_sources_json`, and subscribe the
+   panel to the preview. The raw topic still goes in the bag and the rate monitor. See
+   "Visualization topics vs. authoritative data" above for the reasoning and the numbers.
 
 ## Validation
 

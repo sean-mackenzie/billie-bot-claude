@@ -5,6 +5,10 @@ The production thermal_node is never modified -- see plan section 5b. Pure numpy
 hand-rolled colormap, no cv2/matplotlib dependency at node runtime (matplotlib is only
 used offline by analysis CLIs for saved plots). Raw float data is never touched by this
 node -- it only reads /thermal/image, never republishes over it.
+
+The colormap itself lives in common/preview.py, shared with the OAK-D depth preview so the
+bench has one colorization implementation rather than a per-sensor copy. A 32x24 thermal frame
+is ~3 kB, so unlike the OAK-D streams this output needs no compression to be Foxglove-safe.
 """
 
 import numpy as np
@@ -12,16 +16,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
-
-def _blue_green_red_colormap(normalized: np.ndarray) -> np.ndarray:
-    """Hand-rolled blue->green->red colormap (not the literal 'turbo' LUT) mapping
-    values in [0,1] to an (H,W,3) uint8 RGB array."""
-    t = np.clip(normalized, 0.0, 1.0)
-    r = np.clip(1.5 - np.abs(4 * t - 3), 0.0, 1.0)
-    g = np.clip(1.5 - np.abs(4 * t - 2), 0.0, 1.0)
-    b = np.clip(1.5 - np.abs(4 * t - 1), 0.0, 1.0)
-    rgb = np.stack([r, g, b], axis=-1)
-    return (rgb * 255).astype(np.uint8)
+from billiebot_sensor_tests.common.preview import blue_green_red_colormap
 
 
 class ThermalColorizerNode(Node):
@@ -50,7 +45,7 @@ class ThermalColorizerNode(Node):
         normalized = (frame - self.min_c) / span
         normalized = np.nan_to_num(normalized, nan=0.0, posinf=1.0, neginf=0.0)
 
-        rgb = _blue_green_red_colormap(normalized)
+        rgb = blue_green_red_colormap(normalized)
         color_msg = Image()
         color_msg.header = msg.header
         color_msg.width = msg.width

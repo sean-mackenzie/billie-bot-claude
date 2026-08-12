@@ -27,6 +27,7 @@ setup(
             'run_sensor_test = billiebot_sensor_tests.orchestrate.run_sensor_test:main',
             'topic_rate_monitor = billiebot_sensor_tests.common.rate_monitor:main',
             'ground_truth_marker_node = billiebot_sensor_tests.common.ground_truth_marker:main',
+            'bench_preview_node = billiebot_sensor_tests.common.preview_node:main',
             'oakd_bench_publisher = billiebot_sensor_tests.oakd.oakd_bench_publisher:main',
             'oakd_preview_overlay = billiebot_sensor_tests.oakd.oakd_preview_overlay:main',
             'analyze_oakd_depth = billiebot_sensor_tests.oakd.analyze_oakd_depth:main',
