@@ -4,6 +4,12 @@ depth accuracy, via test_mode:=flat_target) share this launch file.
 Starts a standalone OAK-D acquisition node (oakd_bench_publisher) -- Type 1 tests are
 acquisition-only and never start the production oakd_dog_detector -- plus the rate
 monitor, rosbag2 recording, and (optionally) foxglove_bridge.
+
+`_TOPICS` below is the *authoritative* topic set: it is what rosbag2 records, what the rate
+monitor gates on, and what the analysis CLIs read. `start_visualization_previews` adds a
+separate low-bandwidth `/bench/oakd/.../preview` set for Foxglove only -- those topics are
+deliberately absent from `_TOPICS`, so enabling or disabling previews cannot change what is
+recorded, what is measured, or the pass/fail verdict.
 """
 
 import json
@@ -31,6 +37,13 @@ _TOPICS = {
     'diagnostics': '/bench/oakd/diagnostics',
 }
 
+#: Visualization only -- never recorded, never rate-gated, never read by analysis.
+_PREVIEW_TOPICS = {
+    'rgb_preview': '/bench/oakd/rgb/preview/compressed',
+    'depth_preview': '/bench/oakd/depth/preview/compressed',
+    'points_preview': '/bench/oakd/points_preview',
+}
+
 
 def generate_launch_description():
     test_id = PythonExpression([
@@ -49,6 +62,22 @@ def generate_launch_description():
     actions += [
         DeclareLaunchArgument('test_mode', default_value=''),
         DeclareLaunchArgument('mock', default_value='false'),
+        DeclareLaunchArgument(
+            'start_visualization_previews', default_value='true',
+            description='publish low-bandwidth Foxglove preview topics alongside the raw ones; '
+                        'set false to leave the graph exactly as it was before previews existed'),
+        DeclareLaunchArgument('preview_width', default_value='640'),
+        DeclareLaunchArgument('preview_height', default_value='360'),
+        DeclareLaunchArgument('preview_rate_hz', default_value='5.0'),
+        DeclareLaunchArgument('preview_jpeg_quality', default_value='70'),
+        DeclareLaunchArgument('preview_format', default_value='jpeg',
+                               description="'jpeg', 'png', or 'raw' (uncompressed, downsampled)"),
+        DeclareLaunchArgument('depth_preview_width', default_value='320'),
+        DeclareLaunchArgument('depth_preview_height', default_value='200'),
+        DeclareLaunchArgument('depth_preview_min_m', default_value='0.1'),
+        DeclareLaunchArgument('depth_preview_max_m', default_value='5.0'),
+        DeclareLaunchArgument('points_preview_stride', default_value='16'),
+        DeclareLaunchArgument('points_preview_rate_hz', default_value='2.0'),
     ]
 
     actions.append(manifest_bootstrap_action(test_id, 'oakd', 'OAK-D Lite'))
@@ -62,6 +91,20 @@ def generate_launch_description():
             'sensor_serial': LaunchConfiguration('sensor_serial'),
             'test_mode': LaunchConfiguration('test_mode'),
             'fail_on_missing_device': LaunchConfiguration('fail_on_missing_device'),
+            # Visualization knobs only -- the raw RGB/depth/points publishes above them are
+            # untouched by every one of these.
+            'publish_previews': LaunchConfiguration('start_visualization_previews'),
+            'preview_width': LaunchConfiguration('preview_width'),
+            'preview_height': LaunchConfiguration('preview_height'),
+            'preview_rate_hz': LaunchConfiguration('preview_rate_hz'),
+            'preview_jpeg_quality': LaunchConfiguration('preview_jpeg_quality'),
+            'preview_format': LaunchConfiguration('preview_format'),
+            'depth_preview_width': LaunchConfiguration('depth_preview_width'),
+            'depth_preview_height': LaunchConfiguration('depth_preview_height'),
+            'depth_preview_min_m': LaunchConfiguration('depth_preview_min_m'),
+            'depth_preview_max_m': LaunchConfiguration('depth_preview_max_m'),
+            'points_preview_stride': LaunchConfiguration('points_preview_stride'),
+            'points_preview_rate_hz': LaunchConfiguration('points_preview_rate_hz'),
         }],
         output='screen',
     ))

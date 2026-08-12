@@ -43,9 +43,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # numpy is pinned to the 1.x ABI that tflite-runtime and depthai are built against;
 # depthai is pinned to 2.32.0.0 because the OAK-D nodes use the v2 API -- do not bump
 # to 3.x without porting oakd_dog_detector.py and oakd/oakd_bench_publisher.py.
+# pillow already arrives transitively via matplotlib, but is listed explicitly because
+# billiebot_sensor_tests' common/preview.py depends on it directly for the JPEG-compressed
+# Foxglove preview topics -- a matplotlib change must not silently break bench visualization.
 RUN pip3 install --no-cache-dir \
     pyserial numpy==1.26.4 sounddevice pyusb depthai==2.32.0.0 \
-    pyyaml jinja2 matplotlib fastapi uvicorn markdown \
+    pyyaml jinja2 matplotlib pillow fastapi uvicorn markdown \
     tflite-runtime
 
 # Data directories used by billiebot_cognition (config/cognition.yaml)

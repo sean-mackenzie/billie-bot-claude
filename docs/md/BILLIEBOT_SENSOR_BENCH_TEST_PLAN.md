@@ -213,6 +213,16 @@ operator_notes: ""
 
 Foxglove is a qualitative visualization tool in this plan. Numeric acceptance is determined by recorded data and analysis scripts.
 
+> **Implementation note — authoritative topics vs. visualization topics (architectural rule):**
+>
+> High-rate/high-volume raw sensor topics are **authoritative data products** intended for local rosbag2 recording and quantitative analysis. Remote visualization uses dedicated downsampled, colorized, compressed, and/or rate-limited `/bench/.../preview` topics. Visualization topics are never the source for pass/fail.
+>
+> This is not a stylistic preference. `foxglove_bridge` serves a WebSocket client over Wi-Fi with a `send_buffer_limit` (10 MB default) and **drops messages for a slow client** rather than applying back-pressure to the publisher. Local subscribers are unaffected. A UT-OAK-02 run demonstrated the failure mode exactly: `/bench/oakd/rgb/image_raw`, `/bench/oakd/depth/image_raw` and `/bench/oakd/points` all published at ~5.0 Hz, rosbag2 recorded ~279 messages of each over ~55 s (~3 GiB), and `topic_rate_monitor.json` passed — while Foxglove received ~4–5 messages per topic (~0.12 Hz) and the panels appeared frozen. The OAK-D raw set is ~277 Mbit/s (1080p `bgr8` alone is 248.8 Mbit/s at 5 Hz), far past any Wi-Fi link.
+>
+> **A poor Foxglove receipt rate is not evidence of a poor sensor/ROS publication rate.** Diagnose in this order: `exports/topic_rate_monitor.json` → `ros2 bag info <results_dir>/bag` → only then the Foxglove panel. If the first two are healthy, the problem is transport, and no acceptance threshold should be touched.
+>
+> The shipped layout therefore subscribes the OAK-D tab to preview topics only (`/bench/oakd/rgb/preview/compressed` 640×360 JPEG q70, `/bench/oakd/depth/preview/compressed` 320×200 colorized 0.1–5.0 m, `/bench/oakd/points_preview` stride 16 at 2 Hz, and the three `/bench/oakd_detector/...` previews for DT-OAK-01) — roughly 1.8–2.1 Mbit/s, a ~130× reduction. Previews are enabled by `start_visualization_previews:=true` (default) and are independently disableable; raw topics, encodings, recording, rate gating, and every analysis path are identical either way. Resolutions/rates/quality are launch arguments and are documented under `oakd.visualization` in `sensor_bench.yaml` — deliberately not under `thresholds.*`, since no visualization setting may ever move a pass/fail boundary. Full details in `billiebot_sensor_tests/README.md` § "Visualization topics vs. authoritative data".
+
 ### 3.5 Common rate and integrity monitor
 
 Implement one reusable `topic_rate_monitor.py` node that:
@@ -336,6 +346,8 @@ ros2 launch billiebot_sensor_tests oakd_unit_bench.launch.py \
    - add an **Image** panel for `/bench/oakd/depth/image_raw` and select an appropriate depth colormap/range;
    - add a **3D** panel for `/bench/oakd/points`;
    - add a **Raw Messages** or **Plot** panel for `/bench/oakd/diagnostics`.
+
+   > **Implementation note:** the shipped layout uses the **preview** topics instead of the three raw ones named above, because subscribing Foxglove to the raw set saturates the Wi-Fi link and freezes the panels (§3.4). Use `/bench/oakd/rgb/preview/compressed`, `/bench/oakd/depth/preview/compressed` (already colorized 0.1–5.0 m, so no panel colormap/range setting is needed), and `/bench/oakd/points_preview`. `/bench/oakd/diagnostics` is small and unchanged. The raw topics remain the recorded, rate-gated, analysed ones — step 5's move-an-object check is equally valid on the previews, since they are derived from the same frames.
 5. Move a textured object toward and away from the camera and confirm that the depth image and point cloud change coherently.
 6. Leave the sensor stationary for the remainder of the 60 s recording.
 7. Stop the launch cleanly and verify that all result files are finalized.
@@ -547,6 +559,8 @@ At selected distances, repeat with:
 - View `/dog/detections_3d` in Raw Messages.
 - Plot confidence and depth over time.
 - Plot `/dog/found` as a Boolean state.
+
+> **Implementation note:** the shipped layout views the compressed bench-side previews rather than the detector's raw preview streams, applying the same rule as §3.4/§5.1: `/bench/oakd_detector/annotated/preview/compressed` (annotated), `/bench/oakd_detector/rgb/preview/compressed` (detector RGB), and `/bench/oakd_detector/depth/preview/compressed` (colorized depth). Measured: 507 KiB → 26.7 KiB per RGB/annotated frame, 500 KiB → ~4 KiB per depth frame. `/dog/detections_3d`, `/dog/found` and `/bench/oakd_detector/diagnostics` are already small and are viewed directly. The compression is done entirely bench-side by `common/preview_node.py`'s `bench_preview_node` — the production `oakd_dog_detector` gains **no** new parameter for this, so deployment behaviour is provably unchanged. `/oak/depth/preview` is enabled by this launch (`publish_depth_preview:=true`) and feeds the depth preview, but it is not in the recorded topic set and no scorer reads it.
 
 ### Scoring-script outline
 

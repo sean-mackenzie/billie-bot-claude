@@ -636,9 +636,11 @@ In Foxglove (bridge on the Jetson as usual):
 3. **Point cloud:** 3D panel → toggle `/oak/points` (`sensor_msgs/PointCloud2`). Set the 3D panel's display frame to the driver's camera frame (autocomplete offers it — the driver publishes its own TF, unconnected to BillieBot's URDF unless you bridge them). Color by RGB, orbit your desk in 3D.
 4. Mind USB3 bandwidth on shared hubs, and Wi-Fi bandwidth if you stream the cloud to the Mac — point clouds are the heaviest thing in this guide. Prefer bench Ethernet or a recorded bag (A.1).
 
+> **Bandwidth, concretely.** Streaming this driver's raw set to the Mac is roughly 277 Mbit/s (1080p `bgr8` at 5 Hz is 248.8 Mbit/s on its own). Wi-Fi cannot carry it: the bridge will drop most of it and the panels will look frozen while the camera is in fact fine. `billiebot_sensor_tests` solves this for bench testing with dedicated compressed/decimated `/bench/oakd/.../preview` topics (~2 Mbit/s, a ~130× reduction) — see that package's README § "Visualization topics vs. authoritative data". If you are sightseeing with the Luxonis driver instead, keep the 3D panel closed unless you need it, and prefer Ethernet.
+
 When you're done sightseeing, Ctrl-C the driver and relaunch rung 07 — detections resume.
 
-> If the project later wants a permanent low-rate RGB preview topic from within `oakd_dog_detector` (the design docs sketch a `/oak/rgb/preview`), that's a code change to the detector node, not a Foxglove setting.
+> If the project later wants a permanent low-rate RGB preview topic from within `oakd_dog_detector` (the design docs sketch a `/oak/rgb/preview`), that's a code change to the detector node, not a Foxglove setting. The detector already has an opt-in, default-off `publish_preview` parameter that the DT-OAK-01 bench launch enables; making it a deployment default is what GAP-18 tracks.
 
 ---
 
@@ -654,6 +656,7 @@ When you're done sightseeing, Ctrl-C the driver and relaunch rung 07 — detecti
 | Nav goal does nothing | The 3D panel's Publish-Pose topic is still the default, not `/goal_pose` (Rung 06 step 4); or Nav2 lifecycle isn't active — check the Log panel; or no map was passed (`map:=`) so the planner never activated. |
 | Can't call `/approach_dog`, `/navigate_to_pose`… from Foxglove | They're actions; the bridge doesn't expose actions → CLI (Rung 06/13 callouts). |
 | Images stutter over Wi-Fi but small topics flow | Bandwidth (raw `rgb8` ≈ 4.6 MB/s; point clouds worse) → close unused Image panels (closing actually unsubscribes), move to Ethernet, or record a bag and review offline (A.1). |
+| Panels frozen (~0.1 Hz) but `topic_rate_monitor.json` passes and `ros2 bag info` looks right | Not a sensor fault — `foxglove_bridge` drops messages for a client that can't keep up (`send_buffer_limit`, 10 MB default) while local subscribers stay at full rate. A panel is on a raw high-bandwidth topic. For bench tests, re-import `billiebot_sensor_bench.json` and use the `/bench/.../preview` topics (`billiebot_sensor_tests/README.md` § "Visualization topics vs. authoritative data"). **Never conclude anything about sensor rate from a Foxglove panel.** |
 | `/noir/image` well below 5 Hz **in mock mode** | Known mock artifact: the synthetic frame is generated in pure Python and is CPU-bound in the container. The real Pi camera path is efficient — verify the true 5 Hz at Real Rung 10. |
 | Jetson bridge doesn't show Pi topics | DDS peering, not Foxglove: check `cyclonedds.xml` peer IPs on **both** machines, `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` exported in both launch shells (INSTALLATION §2). |
 | Port 8765 already in use | Another container/app holds it (INSTALLATION Appendix C) → `docker ps`, or launch the bridge with a different `port:=` and matching URL. |

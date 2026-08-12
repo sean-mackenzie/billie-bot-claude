@@ -27,6 +27,35 @@ oakd:
   depth_limits:
     min_m: 0.1
     max_m: 5.0
+  # Visualization-only Foxglove previews. These are documentation of the shipped defaults, NOT
+  # thresholds: nothing in this block may ever gate a result, so it appears under neither
+  # thresholds.required nor thresholds.provisional. Analysis always reads the raw topics above.
+  # Override at launch, e.g. preview_jpeg_quality:=85 or start_visualization_previews:=false.
+  visualization:
+    topics:
+      rgb_preview: /bench/oakd/rgb/preview/compressed
+      depth_preview: /bench/oakd/depth/preview/compressed
+      points_preview: /bench/oakd/points_preview
+      detector_rgb_preview: /bench/oakd_detector/rgb/preview/compressed
+      detector_annotated_preview: /bench/oakd_detector/annotated/preview/compressed
+      detector_depth_preview: /bench/oakd_detector/depth/preview/compressed
+    rgb:
+      width_px: 640
+      height_px: 360
+      rate_hz: 5.0
+      format: jpeg
+      jpeg_quality: 70
+    depth:
+      width_px: 320
+      height_px: 200
+      rate_hz: 5.0
+      format: jpeg
+      jpeg_quality: 70
+      display_min_m: 0.1   # colorization range only -- not a depth-validity threshold
+      display_max_m: 5.0
+    points:
+      stride: 16           # authoritative cloud stays at point_cloud_stride: 4
+      rate_hz: 2.0
   rates:
     requested_hz: 5.0
   thresholds:

@@ -15,6 +15,11 @@
   <depend>billiebot_interfaces</depend>
   <depend>billiebot_audio</depend>
 
+  <!-- JPEG/PNG encoding for the low-bandwidth Foxglove preview topics (common/preview.py).
+       Already present on both hosts as a transitive matplotlib dependency; declared here
+       because the bench preview path depends on it directly. -->
+  <exec_depend>python3-pil</exec_depend>
+
   <exec_depend>billiebot_perception</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
