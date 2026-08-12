@@ -140,6 +140,12 @@ class OakdDogDetector(Node):
             stereo.setDefaultProfilePreset(
                 dai.node.StereoDepth.PresetMode.HIGH_DENSITY
             )
+
+            # Spatial detections are inferred in the RGB-camera coordinate system.
+            # Align stereo depth to the RGB camera so bounding boxes map correctly
+            # into the depth image.
+            stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
+
             mono_left.out.link(stereo.left)
             mono_right.out.link(stereo.right)
 
@@ -147,6 +153,17 @@ class OakdDogDetector(Node):
             spatial_nn = pipeline.create(dai.node.YoloSpatialDetectionNetwork)
             spatial_nn.setBlobPath(model_path)
             spatial_nn.setConfidenceThreshold(self.confidence_threshold)
+
+            # YOLO parser configuration.
+            #
+            # This model is an 80-class COCO detector whose output heads contain
+            # bbox coordinates plus object/class scores. YoloSpatialDetectionNetwork
+            # does not infer these parser settings from the blob; without them the
+            # DepthAI v2 defaults are 0 classes / 0 coordinate size / 0 IoU.
+            spatial_nn.setNumClasses(80)
+            spatial_nn.setCoordinateSize(4)
+            spatial_nn.setIouThreshold(0.5)
+
             spatial_nn.input.setBlocking(False)
             spatial_nn.setBoundingBoxScaleFactor(0.5)
             spatial_nn.setDepthLowerThreshold(100)
@@ -205,6 +222,16 @@ class OakdDogDetector(Node):
         """Process real OAK-D detections."""
         detections = self._det_queue.get()
         dog_found = False
+
+        """ If you want to log all detections, uncomment the following lines. """
+        #if detections.detections:
+        #    self.get_logger().info(
+        #        "NN detections: " +
+        #        ", ".join(
+        #            f"label={d.label} conf={d.confidence:.3f}"
+        #            for d in detections.detections
+        #        )
+        #    )
 
         for det in detections.detections:
             # COCO class 16 = dog
