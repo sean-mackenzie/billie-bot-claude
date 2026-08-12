@@ -218,6 +218,29 @@ def test_points_are_metres_from_millimetre_input():
     assert np.allclose(points[:, 2], 2.0)
 
 
+def test_points_are_float32_ndarray_not_a_python_list():
+    """Guards commit 990a99a: `create_cloud_xyz32(header, points.tolist())` converted 16k points
+    to a Python list every frame and held the authoritative cloud at 0.33 Hz. The refactor that
+    introduced the preview cloud reintroduced that call once already, and `_cloud_msg` now serves
+    both clouds, so a regression would cost two conversions per frame."""
+    points = depth_to_points(synthetic_depth_plane_mm(64, 64, 2000), stride=4, **_INTRINSICS)
+    assert isinstance(points, np.ndarray)
+    assert points.dtype == np.float32
+
+
+def test_cloud_message_is_built_from_the_ndarray_directly():
+    import inspect
+
+    from billiebot_sensor_tests.oakd import oakd_bench_publisher
+
+    source = inspect.getsource(oakd_bench_publisher.OakdBenchPublisher._cloud_msg)
+    # Comments in this method deliberately name `.tolist()` as the thing not to do.
+    code = '\n'.join(line for line in source.splitlines()
+                     if not line.strip().startswith('#'))
+    assert 'create_cloud_xyz32(header, points)' in code
+    assert 'tolist()' not in code
+
+
 def test_depth_to_points_rejects_wrong_rank():
     with pytest.raises(PreviewConfigError):
         depth_to_points(np.zeros((4, 4, 4), dtype=np.uint16), **_INTRINSICS)

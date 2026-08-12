@@ -138,6 +138,9 @@ def depth_to_points(depth_mm: np.ndarray, fx: float, fy: float, cx: float, cy: f
     dropped. Decimating the source depth array is far cheaper than parsing and re-encoding an
     already-serialized PointCloud2, which is why the preview cloud is generated here rather than
     filtered downstream.
+
+    Returns a float32 ndarray, which callers must hand to `create_cloud_xyz32` as-is. Converting
+    it to a Python list per frame is what held the authoritative cloud at 0.33 Hz before 990a99a.
     """
     if depth_mm.ndim != 2:
         raise PreviewConfigError(f'depth_to_points expects a 2D array, got ndim={depth_mm.ndim}')
@@ -148,7 +151,7 @@ def depth_to_points(depth_mm: np.ndarray, fx: float, fy: float, cx: float, cy: f
     valid = z > 0
     x = (xs - cx) * z / fx
     y = (ys - cy) * z / fy
-    return np.stack([x[valid], y[valid], z[valid]], axis=-1).astype(np.float32)
+    return np.stack([x[valid], y[valid], z[valid]], axis=-1).astype(np.float32, copy=False)
 
 
 #: Fraction of the target period a frame may arrive early and still be emitted. Source frames

@@ -17,6 +17,7 @@ production node needs a new parameter. UT-OAK-01/02 instead compress inside
 would cost more than the compression saves.
 """
 
+import array
 import json
 
 import numpy as np
@@ -103,6 +104,9 @@ class _PreviewStream:
             rgb = decimate_image(frame, self.config.width, self.config.height)
             source_order = 'bgr' if msg.encoding == 'bgr8' else 'rgb'
 
+        # array.array rather than bytes: rclpy converts a bytes payload element-by-element, which
+        # costs ~1900x more than handing it a typed array (26.6 ms vs 0.01 ms for a 691 kB frame).
+        # Same defect class as 990a99a.
         if self.config.format == 'raw':
             out = Image()
             out.header = msg.header
@@ -110,14 +114,14 @@ class _PreviewStream:
             out.encoding = 'rgb8' if (self.is_depth or source_order == 'rgb') else 'bgr8'
             out.is_bigendian = False
             out.step = out.width * 3
-            out.data = np.ascontiguousarray(rgb).tobytes()
+            out.data = array.array('B', np.ascontiguousarray(rgb).tobytes())
         else:
             out = CompressedImage()
             out.header = msg.header
             out.format = self.config.format
-            out.data = encode_compressed(
+            out.data = array.array('B', encode_compressed(
                 rgb, self.config.format, self.config.quality, source_order=source_order
-            )
+            ))
         self.publisher.publish(out)
 
 

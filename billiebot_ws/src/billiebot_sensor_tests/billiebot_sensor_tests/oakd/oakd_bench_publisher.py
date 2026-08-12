@@ -301,10 +301,14 @@ class OakdBenchPublisher(Node):
         return depth_to_points(depth_arr, fx, fy, cx, cy, stride)
 
     def _cloud_msg(self, points, stamp) -> PointCloud2:
+        # `points` is passed as a float32 ndarray, never `.tolist()`: converting 16k points to a
+        # Python list per frame is what held the authoritative cloud at 0.33 Hz before 990a99a.
+        # This helper serves both the authoritative and the preview cloud, so a regression here
+        # would cost two conversions per frame.
         header = Header()
         header.stamp = stamp
         header.frame_id = self.camera_frame
-        return point_cloud2.create_cloud_xyz32(header, points.tolist())
+        return point_cloud2.create_cloud_xyz32(header, points)
 
     def _publish_previews(self, rgb_cv, depth_arr, stamp):
         """Visualization-only republish of data already published raw. Wrapped whole: a preview
@@ -351,6 +355,11 @@ class OakdBenchPublisher(Node):
                 )
 
     def _preview_msg(self, rgb, config, stamp, source_order):
+        # `.data` is always assigned an array.array('B', ...), never raw bytes -- rclpy converts a
+        # bytes payload element-by-element (measured: 26.6 ms for a 691 kB raw preview, 1.4 ms for
+        # a 37 KiB JPEG, vs ~0.01 ms either way through array.array). This runs in the acquisition
+        # callback, so the bytes path would eat 13% of the 200 ms frame budget for preview_format
+        # :='raw'. Same defect class as 990a99a.
         if config.format == 'raw':
             msg = Image()
             msg.header.stamp = stamp
@@ -359,13 +368,15 @@ class OakdBenchPublisher(Node):
             msg.encoding = 'bgr8' if source_order == 'bgr' else 'rgb8'
             msg.is_bigendian = False
             msg.step = msg.width * 3
-            msg.data = np.ascontiguousarray(rgb).tobytes()
+            msg.data = array.array('B', np.ascontiguousarray(rgb).tobytes())
             return msg
         msg = CompressedImage()
         msg.header.stamp = stamp
         msg.header.frame_id = self.camera_frame
         msg.format = config.format
-        msg.data = encode_compressed(rgb, config.format, config.quality, source_order=source_order)
+        msg.data = array.array(
+            'B', encode_compressed(rgb, config.format, config.quality, source_order=source_order)
+        )
         return msg
 
     def _publish_diagnostics(self):
