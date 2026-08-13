@@ -126,35 +126,83 @@ def main(argv=None) -> int:
     }
 
     negative_segments = [i for i, s in enumerate(segments) if not s.dog_present]
-    empty_baseline_ok = all(
-        blob_metrics['per_segment_detection_fraction'].get(i, 0.0) == 0.0
-        for i in negative_segments
-    ) if negative_segments else True
-
     positive_segments = [i for i, s in enumerate(segments) if s.dog_present]
-    detection_fraction_ok = all(
-        blob_metrics['per_segment_detection_fraction'].get(i, 0.0) >= reliable_fraction
-        for i in positive_segments
-    ) if positive_segments else False
 
+    # A formal DT-THM-01 run must contain both an empty baseline and
+    # at least one Billie-present segment.
+    ground_truth_present = len(segments) > 0
+    empty_baseline_present = len(negative_segments) > 0
+    positive_segments_present = len(positive_segments) > 0
+
+    empty_baseline_ok = (
+        empty_baseline_present and
+        all(
+            blob_metrics['per_segment_detection_fraction'].get(i, 0.0) == 0.0
+            for i in negative_segments
+        )
+    )
+
+    detection_fraction_ok = (
+        positive_segments_present and
+        all(
+            blob_metrics['per_segment_detection_fraction'].get(i, 0.0)
+            >= reliable_fraction
+            for i in positive_segments
+        )
+    )
+
+    # Zero blob outputs must NOT count as valid when positive
+    # ground-truth segments exist.
     valid_output_frac = blob_metrics['valid_output_fraction']
-    valid_output_ok = (valid_output_frac != valid_output_frac) or valid_output_frac == 1.0
+
+    valid_output_ok = (
+        len(blobs) > 0 and
+        valid_output_frac == 1.0
+    )
 
     pass_fail = {
+        'ground_truth_present': ground_truth_present,
+        'empty_baseline_present': empty_baseline_present,
+        'positive_segments_present': positive_segments_present,
         'no_blobs_in_empty_baseline': empty_baseline_ok,
-        'positive_detection_fraction_within_provisional_limit': detection_fraction_ok,
+        'positive_detection_fraction_within_limit': detection_fraction_ok,
         'positive_outputs_valid': valid_output_ok,
     }
+
     thresholds_used = {
+        'ground_truth_present': {
+            'value': ground_truth_present,
+            'threshold': True,
+            'tier': 'required',
+        },
+        'empty_baseline_present': {
+            'value': empty_baseline_present,
+            'threshold': True,
+            'tier': 'required',
+        },
+        'positive_segments_present': {
+            'value': positive_segments_present,
+            'threshold': True,
+            'tier': 'required',
+        },
         'no_blobs_in_empty_baseline': {
-            'value': empty_baseline_ok, 'threshold': True, 'tier': 'required'},
-        'positive_detection_fraction_within_provisional_limit': {
-            'value': detection_fraction_ok, 'threshold': reliable_fraction, 'tier': 'provisional'},
+            'value': empty_baseline_ok,
+            'threshold': True,
+            'tier': 'required',
+        },
+        'positive_detection_fraction_within_limit': {
+            'value': detection_fraction_ok,
+            'threshold': reliable_fraction,
+            'tier': 'required',
+        },
         'positive_outputs_valid': {
-            'value': valid_output_ok, 'threshold': True, 'tier': 'required'},
+            'value': valid_output_ok,
+            'threshold': True,
+            'tier': 'required',
+        },
     }
-    required_checks = [v for k, v in pass_fail.items() if thresholds_used[k]['tier'] == 'required']
-    overall = all(required_checks)
+
+    overall = all(pass_fail.values())
     pass_fail['overall'] = overall
 
     write_metrics_json(result_dir.metrics_json_path, metrics, pass_fail)

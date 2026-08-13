@@ -26,7 +26,7 @@ class ThermalGroundTruthSegment:
 
 
 def associate_blob_to_frame(blobs: List[BlobSample], frame_timestamps_ns: List[int],
-                             tolerance_s: float = 0.3) -> dict:
+                             tolerance_s: float = 0.1) -> dict:
     """Associates each raw frame timestamp with the nearest blob within tolerance.
     Returns {frame_ts_ns: BlobSample or None}."""
     tol_ns = int(tolerance_s * 1e9)
