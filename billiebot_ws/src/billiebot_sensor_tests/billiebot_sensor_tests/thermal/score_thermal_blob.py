@@ -24,20 +24,42 @@ def _load_ground_truth_segments(result_dir) -> list:
     path = result_dir.exports_dir / 'ground_truth_segments.csv'
     if not path.exists():
         return []
+
     with open(path, 'r') as f:
         rows = list(csv.DictReader(f))
+
     segments = []
+
     for i, row in enumerate(rows):
         t_start = int(row['t_start_ns'])
-        t_end = int(rows[i + 1]['t_start_ns']) if i + 1 < len(rows) else t_start + int(30e9)
-        dog_present = row['label'].strip().lower() not in ('', 'empty', 'negative', 'no_dog')
+
+        # Prefer an explicitly supplied end time when available.
+        if row.get('t_end_ns'):
+            t_end = int(row['t_end_ns'])
+        elif i + 1 < len(rows):
+            t_end = int(rows[i + 1]['t_start_ns'])
+        else:
+            t_end = t_start + int(30e9)
+
+        label = row['label'].strip().lower()
+        dog_present = label not in ('', 'empty', 'negative', 'no_dog')
+
         distance_m = None
         if row.get('distance_m'):
             try:
                 distance_m = parse_quantity(row['distance_m'])
             except ValueError:
                 distance_m = None
-        segments.append(ThermalGroundTruthSegment(t_start, t_end, dog_present, distance_m))
+
+        segments.append(
+            ThermalGroundTruthSegment(
+                t_start,
+                t_end,
+                dog_present,
+                distance_m,
+            )
+        )
+
     return segments
 
 
