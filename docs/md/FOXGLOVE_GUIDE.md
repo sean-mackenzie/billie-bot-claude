@@ -377,7 +377,7 @@ pi$     ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765   # ru
 
 Foxglove → Open connection → `ws://192.168.42.100:8765` (Jetson) or `ws://192.168.42.101:8765` (Pi). Your Mac needs only WebSocket reachability to that IP over the robot's Wi-Fi (GL-SFT1200 router) — it does **not** need to be a DDS participant. That's the whole point of the bridge.
 
-Once both machines are up with CycloneDDS peers configured (`billiebot_bringup/config/cyclonedds.xml`, multicast off, static peers; remember `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` on both boards per §2.1), **one bridge on the Jetson sees the Pi's topics too** — from then on, connect only to the Jetson and drive everything from one dashboard.
+Once both machines are up with CycloneDDS peers configured (`billiebot_bringup/config/cyclonedds.xml`, multicast off, static peers; remember `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` must be in effect on both boards per §2.1 — the Jetson's `~/.bashrc`, and `ENV` baked into the Pi image), **one bridge on the Jetson sees the Pi's topics too** — from then on, connect only to the Jetson and drive everything from one dashboard.
 
 Drop `mock:=true` from every command below. Where VERIFICATION.md lists a `verify_rung_*.sh` script, still run it — Foxglove complements the scripts, it doesn't replace them.
 
@@ -658,7 +658,7 @@ When you're done sightseeing, Ctrl-C the driver and relaunch rung 07 — detecti
 | Images stutter over Wi-Fi but small topics flow | Bandwidth (raw `rgb8` ≈ 4.6 MB/s; point clouds worse) → close unused Image panels (closing actually unsubscribes), move to Ethernet, or record a bag and review offline (A.1). |
 | Panels frozen (~0.1 Hz) but `topic_rate_monitor.json` passes and `ros2 bag info` looks right | Not a sensor fault — `foxglove_bridge` drops messages for a client that can't keep up (`send_buffer_limit`, 10 MB default) while local subscribers stay at full rate. A panel is on a raw high-bandwidth topic. For bench tests, re-import `billiebot_sensor_bench.json` and use the `/bench/.../preview` topics (`billiebot_sensor_tests/README.md` § "Visualization topics vs. authoritative data"). **Never conclude anything about sensor rate from a Foxglove panel.** |
 | `/noir/image` well below 5 Hz **in mock mode** | Known mock artifact: the synthetic frame is generated in pure Python and is CPU-bound in the container. The real Pi camera path is efficient — verify the true 5 Hz at Real Rung 10. |
-| Jetson bridge doesn't show Pi topics | DDS peering, not Foxglove: check `cyclonedds.xml` peer IPs on **both** machines, `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` exported in both launch shells (INSTALLATION §2). |
+| Jetson bridge doesn't show Pi topics | DDS peering, not Foxglove: check `cyclonedds.xml` peer IPs on **both** machines, `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` in effect on both (Jetson `~/.bashrc`, Pi image `ENV` — INSTALLATION §2). |
 | Port 8765 already in use | Another container/app holds it (INSTALLATION Appendix C) → `docker ps`, or launch the bridge with a different `port:=` and matching URL. |
 | Panel settings you set keep coming back wrong | You're editing a different layout than you think — check the active layout name; settings live in layouts. |
 
