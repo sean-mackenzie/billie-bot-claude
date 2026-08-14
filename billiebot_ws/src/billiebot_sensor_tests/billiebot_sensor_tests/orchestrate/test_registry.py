@@ -15,6 +15,16 @@ class TestSpec:
     analysis_module: Optional[str]
     profile: Optional[str]
     default_duration_sec: int
+    # Fields below are appended with defaults so the original eleven positional
+    # constructions keep working unchanged.
+    #: True when the run ends on operator Ctrl-C rather than a timer (default_duration_sec
+    #: 0). Descriptive metadata for the operator and the registry tests -- the actual
+    #: no-timer behaviour comes from duration_shutdown_action() seeing the literal '0'.
+    operator_paced: bool = False
+    #: False for tests that need no sensor hardware at all (UT-BAT-02B is software-only).
+    hardware_required: bool = True
+    #: Launch arguments the operator normally must supply, surfaced in error messages.
+    required_extra_args: tuple = ()
 
 
 TEST_REGISTRY = {
@@ -51,4 +61,28 @@ TEST_REGISTRY = {
     'DT-AUD-02': TestSpec(
         'DT-AUD-02', 'audio', 2, 'audio_classifier_bench.launch.py',
         'billiebot_sensor_tests.audio.score_audio_classifier', 'doa', 0),
+    # -- Sensor Nano (DFRobot SEN0253 + battery divider on a dedicated Arduino Nano V3) --
+    'UT-IMU-01': TestSpec(
+        'UT-IMU-01', 'sensor_nano', 1, 'sensor_nano_imu_bench.launch.py',
+        'billiebot_sensor_tests.sensor_nano.analyze_imu', 'acquisition', 180,
+        required_extra_args=('sensor_port',)),
+    'UT-IMU-02': TestSpec(
+        'UT-IMU-02', 'sensor_nano', 1, 'sensor_nano_imu_ekf_bench.launch.py',
+        'billiebot_sensor_tests.sensor_nano.analyze_imu', 'ekf', 120,
+        required_extra_args=('sensor_port',)),
+    # Operator-paced: the PSU sweep is driven by hand with a DMM, so the launch runs until
+    # Ctrl-C and record_battery_point is invoked once per setpoint from a second terminal.
+    'UT-BAT-01': TestSpec(
+        'UT-BAT-01', 'sensor_nano', 1, 'sensor_nano_battery_bench.launch.py',
+        'billiebot_sensor_tests.sensor_nano.analyze_battery', None, 0,
+        operator_paced=True, required_extra_args=('sensor_port',)),
+    'UT-BAT-02': TestSpec(
+        'UT-BAT-02', 'sensor_nano', 2, 'sensor_nano_battery_safe_bench.launch.py',
+        'billiebot_sensor_tests.sensor_nano.score_battery_safe', 'physical', 90,
+        required_extra_args=('sensor_port',)),
+    # Software-only boundary check; needs no Sensor Nano, no divider and no PSU.
+    'UT-BAT-02B': TestSpec(
+        'UT-BAT-02B', 'mission_software', 2, 'sensor_nano_battery_threshold_bench.launch.py',
+        'billiebot_sensor_tests.sensor_nano.score_battery_safe', 'threshold', 90,
+        hardware_required=False),
 }

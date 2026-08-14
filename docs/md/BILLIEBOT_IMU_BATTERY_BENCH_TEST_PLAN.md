@@ -1,7 +1,7 @@
 # BillieBot IMU + Battery-Sense Bench Test Plan
 
-**Document status:** Final operator-facing plan — pending user approval  
-**Date:** 2026-08-14  
+**Document status:** Approved. **Software implementation complete; hardware execution still pending.**  
+**Date:** 2026-08-14 (plan) / 2026-08-14 (reconciled against the as-built software)  
 **Applies to:** BillieBot two-Arduino-Nano architecture  
 **Primary host:** Jetson Orin Nano  
 **Sensor controller:** Arduino Nano V3 (“Sensor Nano”)  
@@ -9,6 +9,20 @@
 **IMU/barometer:** DFRobot Gravity 10 DOF IMU AHRS BNO055 + BMP280, SEN0253  
 **Battery:** OVONIC 3S LiPo, 11.1 V nominal, 5000 mAh, with resistive battery-sense divider  
 **ROS 2:** Humble
+
+> **Implementation note — status of this document.**
+> The plan below was approved and has now been implemented in `billiebot_sensor_tests`.
+> Every command in this document has been reconciled against the code that actually exists.
+> What has been verified so far is **software and build verification only**:
+> `colcon build`, `colcon test` (445 tests, 0 failures), firmware compilation with
+> `arduino-cli`, and a genuine end-to-end execution of **UT-BAT-02B**, which is the one test
+> in this campaign that requires no hardware.
+>
+> **UT-IMU-01, UT-IMU-02, UT-BAT-01 and UT-BAT-02 have NOT been run.** They need the physical
+> Sensor Nano, the SEN0253, the divider and a bench PSU. No hardware PASS is claimed anywhere
+> in this document.
+>
+> UT-BAT-02B has been executed and **FAILS at exactly 10.5000 V, as predicted** — see §18.3.
 
 ---
 
@@ -70,6 +84,19 @@ A fifth result is produced as part of UT-BAT-02:
 - **UT-BAT-02B — exact software threshold boundary check at 10.5 V.**
 
 This subtest intentionally separates the exact software inequality test from the physical PSU test, where ADC quantization and measurement uncertainty make an exact 10.500 V boundary less appropriate.
+
+> **Implementation note — all five are first-class registry entries.** UT-BAT-02B is
+> registered and orchestrated in its own right rather than being a side effect of UT-BAT-02,
+> so the hardware and software results are always reported separately and can be run
+> independently:
+>
+> | Test ID | Launch file | Analysis | Nominal duration | Hardware |
+> |---|---|---|---:|---|
+> | `UT-IMU-01` | `sensor_nano_imu_bench.launch.py` | `analyze_sensor_nano_imu --profile acquisition` | 180 s | Sensor Nano |
+> | `UT-IMU-02` | `sensor_nano_imu_ekf_bench.launch.py` | `analyze_sensor_nano_imu --profile ekf` | 120 s | Sensor Nano |
+> | `UT-BAT-01` | `sensor_nano_battery_bench.launch.py` | `analyze_sensor_nano_battery` | operator-paced (`duration_sec:=0`) | Sensor Nano + divider + PSU |
+> | `UT-BAT-02` | `sensor_nano_battery_safe_bench.launch.py` | `score_battery_safe --profile physical` | 90 s | Sensor Nano + divider + PSU |
+> | `UT-BAT-02B` | `sensor_nano_battery_threshold_bench.launch.py` | `score_battery_safe --profile threshold` | ~45 s | **none** |
 
 ---
 
@@ -360,11 +387,14 @@ If the measured ratio is grossly different from 6.0, stop the test and correct t
 
 ---
 
-# 9. Planned Sensor Nano Firmware
+# 9. Sensor Nano Firmware
 
-> This section is the firmware specification for the later Claude Code implementation. The firmware does not exist yet in the approved final form.
+> **Implementation note.** This section was the firmware specification; the firmware now
+> exists and this section has been reconciled with it. The authoritative build/flash
+> reference is `billiebot_ws/src/billiebot_sensor_tests/firmware/sensor_nano/README.md`,
+> which carries the pinned library versions and the measured flash/SRAM figures.
 
-## 9.1 Proposed source location
+## 9.1 Source location
 
 ```text
 billiebot_ws/src/billiebot_sensor_tests/
@@ -462,6 +492,34 @@ S,<seq>,<t_us>,<bno_ok>,<bmp_ok>,<i2c_errors>,<imu_read_errors>*<crc>
 
 The parser shall reject malformed or CRC-failed records and count failures.
 
+> **Implementation note — as-built protocol.** The shipped format follows the above with
+> four clarifications, all mirrored in `sensor_nano/protocol.py` and its test suite:
+>
+> 1. **A magnetometer record was added**, since real measurements are available and BLK-13
+>    makes them worth capturing:
+>    `M,<seq>,<t_us>,<mx>,<my>,<mz>*<crc>` at 10 Hz. It carries **microtelsa**, not tesla —
+>    tesla would need eight decimals of fixed-point text to preserve the chip's 0.0625 µT
+>    quantum. The bridge scales to tesla for `sensor_msgs/MagneticField`. Set
+>    `ENABLE_MAGNETOMETER 0` in the sketch to drop the record and reclaim its bandwidth.
+>    `/imu/mag` is published **only** when real `M` records arrive; no fake magnetometer data
+>    is ever produced.
+> 2. **The status record carries four more counters** than sketched, so every fault path in
+>    §9.6 is observable:
+>    `S,<seq>,<t_us>,<bno_ok>,<bmp_ok>,<fusion_mode>,<i2c_errors>,<imu_read_errors>,<bmp_errors>,<reinits>,<imu_records_dropped>*<crc>`.
+>    `fusion_mode` is read back **from the chip**, not echoed from the compile-time `#define`,
+>    so a run captured with a modified build cannot misrepresent which mode executed.
+> 3. **`seq` is one `uint32` counter shared by every record type**, not per-type. A dropped
+>    frame of any kind therefore shows up as a single global discontinuity.
+> 4. **CRC-16/CCITT-FALSE** is poly `0x1021`, init `0xFFFF`, no reflection, no final XOR,
+>    over the payload preceding the `*`, as four uppercase hex digits. The canonical check
+>    value `crc16("123456789") == 0x29B1` is asserted **both** at firmware boot and in the
+>    Python test suite, so the two implementations cannot silently diverge.
+>
+> Field precision is chosen to be lossless against each sensor's own quantum: quaternion 5
+> decimals (chip resolution 1/2¹⁴), gyro 4 (1/16 dps), acceleration 3 (0.01 m/s²),
+> magnetometer 3 (0.0625 µT). Measured throughput is **6290 B/s, ≈55 % of the 11520 B/s the
+> link carries** — see BLK-14.
+
 ## 9.5 Battery ADC behavior
 
 - Arduino ADC reference: default AVcc.
@@ -498,49 +556,94 @@ The firmware shall:
 
 There are no actuators on the Sensor Nano, so it does not need the motor watchdog used by the Motor Nano.
 
+> **Implementation note — how each of these is actually achieved.**
+>
+> | Requirement | Mechanism |
+> |---|---|
+> | never hang on I²C | `Wire.setWireTimeout(25000, true)` (AVR core ≥1.8.x) bounds every transaction and resets TWI on timeout |
+> | count I²C faults | `Wire.getWireTimeoutFlag()` polled after each transaction |
+> | detect a failed BNO055 read | **quaternion norm gate, 0.90–1.10.** `Adafruit_BNO055::getQuat()` discards the `bool` from its `private` `readLen()`, so a failed I²C read surfaces as an all-zero quaternion. Norm-gating drops and counts the sample instead of transmitting plausible-looking zeros; a valid fusion quaternion is always unit norm, so this is a sound check, and `readLen()` being private means it is also the only one available. |
+> | detect a failed BMP280 read | plausibility gate, 30–110 kPa and −40–85 °C (`readPressure()` returns `NAN` before `begin()` and `0` on a calibration divide-by-zero) |
+> | bounded reinitialization | re-`begin()` after 25 consecutive failures, at most once per 5 s, at most 20 times total, per peripheral independently |
+> | micros() rollover | all scheduling uses unsigned `micros()` subtraction, which is correct across the ~71.6-minute wrap with no special-casing; the Jetson parser unwraps it into a monotonic uptime |
+>
+> A re-`begin()` blocks for roughly a second. That is acceptable only because the peripheral
+> is already dead when it happens; the cooldown is what stops the stall repeating.
+>
+> **ADC averaging:** one `analogRead(A0)` per loop iteration is accumulated and the mean is
+> emitted every 200 ms. Averaging this way costs no scheduling jitter at all — a burst of
+> conversions inside the battery tick would have delayed the 50 Hz IMU path.
+
 ---
 
-# 10. Planned Jetson Test Software
+# 10. Jetson Test Software
 
-> These commands become runnable only after the later implementation step.
+> **Implementation note.** This section described the planned layout; it now describes the
+> as-built one. The commands throughout this document are runnable after
+> `colcon build --packages-select billiebot_sensor_tests && source install/setup.bash`.
 
-Proposed additions to `billiebot_sensor_tests`:
+Additions to `billiebot_sensor_tests`:
 
 ```text
 config/
-├── sensor_nano_bench.yaml
-└── ekf_imu_bench.yaml
+├── sensor_bench.yaml          # extended with a `sensor_nano:` block (see note below)
+└── ekf_imu_bench.yaml         # new
 
 launch/
 ├── sensor_nano_imu_bench.launch.py
 ├── sensor_nano_imu_ekf_bench.launch.py
 ├── sensor_nano_battery_bench.launch.py
-└── sensor_nano_battery_safe_bench.launch.py
+├── sensor_nano_battery_safe_bench.launch.py
+└── sensor_nano_battery_threshold_bench.launch.py   # UT-BAT-02B, software-only
 
 billiebot_sensor_tests/
 └── sensor_nano/
     ├── __init__.py
-    ├── protocol.py
-    ├── sensor_nano_bridge.py
-    ├── imu_metrics.py
-    ├── analyze_imu.py
-    ├── battery_metrics.py
-    ├── analyze_battery.py
-    ├── battery_point_recorder.py
-    └── score_battery_safe.py
+    ├── protocol.py               # CRC, records, strict parser, stream integrity
+    ├── imu_metrics.py            # quaternion math                (no rclpy)
+    ├── battery_metrics.py        # divider/ADC/regression math     (no rclpy)
+    ├── safety_metrics.py         # SAFE propagation math           (no rclpy)
+    ├── launch_common.py          # shared launch wiring for the four hardware launches
+    ├── sensor_nano_bridge.py     # owns the serial link, publishes the ROS contract
+    ├── analyze_imu.py            # UT-IMU-01 / UT-IMU-02
+    ├── analyze_battery.py        # UT-BAT-01
+    ├── battery_point_recorder.py # record_battery_point
+    ├── battery_threshold_test.py # UT-BAT-02B stimulus
+    └── score_battery_safe.py     # UT-BAT-02 / UT-BAT-02B
 ```
 
-Expected console scripts:
+Console scripts (all registered in `setup.py`):
 
 ```text
 sensor_nano_bridge
 analyze_sensor_nano_imu
 analyze_sensor_nano_battery
 record_battery_point
+battery_threshold_test
 score_battery_safe
 ```
 
-Editing the existing `setup.py` to add these console-script entries is approved if necessary.
+> **Implementation note — where the thresholds live (deviation from the proposal above).**
+> Sensor Nano thresholds went into the existing `config/sensor_bench.yaml` under a new
+> `sensor_nano:` block, **not** a separate `sensor_nano_bench.yaml`. `run_sensor_test` passes
+> exactly one `--config-file` to every analyzer, so a second thresholds file would either
+> break orchestrated runs or become a competing source of truth.
+>
+> `config/ekf_imu_bench.yaml` **is** a separate file, because it is `robot_localization` node
+> parameters rather than acceptance thresholds — a different consumer entirely.
+>
+> Launch arguments such as `battery_divider_ratio` and `adc_reference_voltage` default to the
+> empty string and override the YAML only when the operator actually sets one, so a value can
+> never differ depending on whether a run went through `ros2 launch` or `run_sensor_test`.
+
+> **Implementation note — the orchestrator is now the preferred workflow.** All five tests
+> are registered in `orchestrate/test_registry.py` and run through the standard
+> `run_sensor_test` entry point, which starts the launch file, records the bag, runs the
+> analyzer and computes the verdict in one command. `run_sensor_test` gained `--sensor-port`
+> and `--baudrate`, forwarded **only when non-empty** so the pre-existing OAK-D, thermal, NoIR
+> and audio launch files — which never declare those arguments — keep working unchanged.
+> The direct `ros2 launch` + `ros2 run analyze_*` path remains fully supported and produces an
+> identical verdict; it is documented per test below as the lower-level alternative.
 
 ## 10.1 Bench ROS topics
 
@@ -558,6 +661,56 @@ The bench bridge shall publish production-compatible topics where the contract i
 
 The bridge shall use `imu_link` as the default IMU frame.
 
+> **Implementation note — exact as-built message types.**
+>
+> | Topic | Type | Notes |
+> |---|---|---|
+> | `/imu/data` | `sensor_msgs/msg/Imu` | `imu_link`, normalized quaternion, rad/s, m/s² **including gravity** |
+> | `/imu/mag` | `sensor_msgs/msg/MagneticField` | tesla; the publisher is created **only** when `publish_magnetometer` is true, so an advertised-but-silent topic can never imply a feed that does not exist |
+> | `/barometer/pressure` | `sensor_msgs/msg/FluidPressure` | Pa; `variance` 0.0 = "unknown" per the sensor_msgs convention |
+> | `/barometer/temperature` | `sensor_msgs/msg/Temperature` | °C |
+> | `/battery_state` | `sensor_msgs/msg/BatteryState` | see the honesty rules below |
+> | `/bench/battery/adc` | **`std_msgs/msg/Float32`** | raw averaged count |
+> | `/bench/sensor_nano/diagnostics` | `diagnostic_msgs/msg/DiagnosticArray` | two statuses: `sensor_nano: serial link` (parser counters) and `sensor_nano: peripherals` (`bno_ok`/`bmp_ok`/I²C/BNO055 calibration levels) |
+>
+> **`/bench/battery/adc` pairing invariant.** `Float32` carries no header, so pairing is by
+> ordering: the bridge publishes the `Float32` from the *same* `B` record, in the *same*
+> callback, immediately after the corresponding `BatteryState`. The Nth ADC sample is
+> therefore the raw count behind the Nth voltage. UT-BAT-01 relies on this.
+>
+> **BatteryState honesty.** Only voltage is measured. `current`, `charge`, `capacity`,
+> `design_capacity` and `percentage` are **NaN**; `cell_voltage` and `cell_temperature` are
+> **empty** (individual 3S cells are not observable — BLK-16); `power_supply_status` and
+> `power_supply_health` are **UNKNOWN**; `power_supply_technology` is `LIPO`, which is
+> genuinely known. `POWER_SUPPLY_HEALTH_COLD` is **not** used as a low-voltage shorthand —
+> that is BLK-06 and it is not repeated here. Contrast `base_bridge.py:331`, which synthesizes
+> per-cell voltages by dividing the pack voltage by the cell count.
+>
+> **Bridge parameters:** `port`, `baudrate`, `imu_frame_id`, `barometer_frame_id`,
+> `battery_frame_id`, `orientation_frame_convention`, `battery_divider_ratio`,
+> `adc_reference_voltage`, `battery_cell_count`, `battery_low_voltage`,
+> `battery_critical_voltage`, `battery_present_min_voltage`, `publish_battery`,
+> `publish_magnetometer`, `publish_barometer`, `startup_settle_sec`,
+> `serial_read_timeout_sec`, `queue_max_lines`, `drain_period_sec`,
+> `diagnostics_period_sec`, `fail_on_missing_device`, `stats_export_path`, and the three
+> `*_covariance_diagonal` vectors.
+>
+> **Threading and timestamps.** A bounded reader thread does the blocking `serial.read()` and
+> pushes complete lines into a `queue.Queue` that a ROS timer drains, so the executor never
+> blocks on the port. The ROS stamp is captured **in the reader thread at the moment the line
+> arrives**, not when the drain timer reaches it, so queue latency cannot distort the rate and
+> gap metrics UT-IMU-01 gates on. The Nano's `micros()` is preserved separately as a
+> diagnostic uptime and is never interpreted as ROS or Unix epoch time.
+>
+> **Arduino auto-reset.** Opening the port asserts DTR and resets the Nano into its
+> bootloader; the bridge discards `startup_settle_sec` (default 2.5 s) of input and flushes
+> before parsing, so bootloader noise is never counted as a parser error.
+>
+> **Covariances.** Configurable diagonals under `sensor_nano.imu_covariance.*`, explicitly
+> **provisional** and explicitly not a characterized accuracy claim for this unit — see
+> BLK-15. They are non-zero because `robot_localization` treats an all-zero covariance as
+> unknown and substitutes its own tiny default, which destabilizes the filter.
+
 ## 10.2 ROS IMU conventions
 
 The bridge shall ensure:
@@ -572,6 +725,27 @@ The bridge shall ensure:
 - no field falsely claims valid data if the sensor does not provide it.
 
 The bridge shall document any BNO055-axis/world-frame conversion.
+
+> **Implementation note — orientation convention.** **No conversion is applied by default.**
+> The firmware transmits the BNO055 fusion quaternion with no axis remap (default P1
+> placement), and the bridge parameter `orientation_frame_convention` defaults to
+> `bno055_native`, i.e. the identity. The alternative `nwu_to_enu` applies a documented,
+> unit-tested +90° yaw world-frame change (derivation in `sensor_nano/imu_metrics.py`).
+>
+> Native passthrough is the default deliberately: the chip's fusion world frame is not yet
+> verified on this hardware (BLK-14), and encoding a guess would mean the bench validated an
+> assumption rather than measuring one. The first hardware run establishes the truth.
+>
+> **This is safe for scoring.** The commanded-rotation gates are computed from *body-frame*
+> relative rotations (`q_startᐨ¹ ⊗ q_hold`), and for any fixed world transform `R`,
+> `(R q_a)ᐨ¹ (R q_b) = q_aᐨ¹ q_b`. The axis and sign verdicts are therefore **invariant** to
+> the world-frame choice; only absolute heading depends on it, and absolute magnetic heading
+> is explicitly non-gating (§14.8, BLK-13). `test_sensor_nano_imu_metrics.py` asserts this
+> invariance directly.
+>
+> Gyro and acceleration are already right-handed about the chip axes, and `imu_link` is
+> defined for the bench as coincident with the SEN0253's marked sensor axes. BLK-12 covers
+> the installed-robot transform.
 
 ---
 
@@ -619,7 +793,8 @@ git status --short
 git rev-parse HEAD
 ```
 
-After the later software implementation, rebuild:
+Build the bench software (required once after pulling this branch, and after any change to
+`billiebot_sensor_tests`):
 
 ```bash
 cd ~/billie-bot-claude/billiebot_ws
@@ -683,7 +858,29 @@ The user normally needs membership in `dialout`.
 
 # 13. Firmware Build and Flash Procedure
 
-The later implementation shall document the exact required Arduino libraries and versions.
+> **Implementation note — verified toolchain.** The firmware compiles clean with the versions
+> below (`--warnings all`, no warnings from the sketch). The authoritative copy of this table
+> lives in `firmware/sensor_nano/README.md`.
+>
+> | Component | Version |
+> |---|---|
+> | `arduino-cli` | 1.5.1 |
+> | `arduino:avr` core | 1.8.8 |
+> | Adafruit BNO055 | 1.6.4 |
+> | Adafruit BMP280 Library | 3.0.0 |
+> | Adafruit BusIO | 1.17.4 |
+> | Adafruit Unified Sensor | 1.1.15 |
+>
+> Measured footprint on an ATmega328P:
+>
+> ```text
+> Sketch uses 17370 bytes (56%) of program storage space. Maximum is 30720 bytes.
+> Global variables use 760 bytes (37%) of dynamic memory, leaving 1288 bytes for
+> local variables. Maximum is 2048 bytes.
+> ```
+>
+> Core **1.8.8 or newer is required**, specifically for `Wire.setWireTimeout()` /
+> `Wire.getWireTimeoutFlag()` — the bounded-I²C and fault-counting mechanism of §9.6.
 
 Reference CLI procedure:
 
@@ -691,6 +888,9 @@ Reference CLI procedure:
 arduino-cli board list
 arduino-cli core update-index
 arduino-cli core install arduino:avr
+
+arduino-cli lib install "Adafruit BNO055" "Adafruit BMP280 Library" \
+                        "Adafruit Unified Sensor" "Adafruit BusIO"
 ```
 
 Set the detected port on the machine performing the flash:
@@ -800,9 +1000,24 @@ Stop here if BNO055 or BMP280 initialization fails.
 
 ## 14.4 Terminal 1 — acquisition launch
 
+**Preferred — the standard orchestrator.** It runs the launch file, records the bag, runs the
+analyzer and computes the verdict in one command:
+
 ```bash
 export RESULTS=~/billiebot_test_results/UT-IMU-01_$(date -u +%Y%m%dT%H%M%SZ)
 
+ros2 run billiebot_sensor_tests run_sensor_test \
+  --test-id UT-IMU-01 \
+  --results-dir "$RESULTS" \
+  --sensor-port "$SENSOR_NANO_PORT"
+```
+
+`--duration-sec` defaults to the registry value of 180 s.
+
+**Manual alternative** (useful when you want to inspect or copy the bag before scoring — it
+produces an identical verdict):
+
+```bash
 ros2 launch billiebot_sensor_tests sensor_nano_imu_bench.launch.py \
   results_dir:="$RESULTS" \
   sensor_port:="$SENSOR_NANO_PORT" \
@@ -810,6 +1025,24 @@ ros2 launch billiebot_sensor_tests sensor_nano_imu_bench.launch.py \
   duration_sec:=180 \
   record_bag:=true
 ```
+
+> **Implementation note — mark every hold.** This launch starts `ground_truth_marker_node`.
+> Type `mark <label>` into **this terminal** at each hold of the §14.6 sequence, using the
+> labels configured in `sensor_nano.ut_imu_01_rotation_sequence`:
+>
+> ```text
+> mark flat          mark x_plus_90     mark x_minus_90
+> mark y_plus_90     mark y_minus_90    mark z_plus_90
+> ```
+>
+> Marks land in `exports/ground_truth_segments.csv`. The analyzer discards the leading 40 % of
+> each marked segment (`rotation_segment_settle_fraction`) before averaging orientation, since
+> the fixture is still moving at the start of a hold.
+>
+> **Without marks the commanded-rotation criterion FAILS rather than being skipped.** "Clear
+> correct-axis response with expected sign" is a required gate, and a run carrying no evidence
+> for it has not demonstrated it. The stationary-acceleration and gyro windows fall back to the
+> first 25 s of the recording if `flat` is unmarked, but the rotation gate has no fallback.
 
 ## 14.5 Terminal 2 — live verification
 
@@ -860,6 +1093,15 @@ The automated recording lasts 180 s. Perform approximately this sequence:
 
 If the implementation includes a ground-truth marker, mark each transition/hold. The exact timestamps are more important than perfect 90° placement.
 
+> **Implementation note — direction and tolerance.** Positive follows the **right-hand rule
+> about the board's own marked axis** on the SEN0253. The gate demands axis *dominance*, not
+> axis purity: the commanded axis component must exceed the largest off-axis component by
+> `ut_imu_01_axis_dominance_ratio` (2.0, provisional) and the total turn must exceed
+> `ut_imu_01_min_rotation_angle_deg` (45°, provisional). A realistic hand rotation with a few
+> degrees of contamination on the other two axes passes; a rotation about the wrong axis, or
+> in the wrong direction, does not. Scoring uses quaternion relative rotations with proper
+> angle wrapping — never Euler-angle subtraction.
+
 ## 14.7 Analysis
 
 After acquisition ends:
@@ -868,7 +1110,8 @@ After acquisition ends:
 ros2 bag info "$RESULTS/bag"
 ```
 
-Run:
+Run (only needed if you used the manual `ros2 launch` path — `run_sensor_test` already did
+this):
 
 ```bash
 ros2 run billiebot_sensor_tests analyze_sensor_nano_imu \
@@ -882,6 +1125,15 @@ Inspect:
 cat "$RESULTS/metrics.json"
 cat "$RESULTS/report.md"
 ```
+
+> **Implementation note — where each metric comes from.** BNO055/BMP280 init state, CRC and
+> sequence counters are read from `exports/sensor_nano_parser_stats.json` (written by the
+> bridge at shutdown), falling back to the last bagged
+> `/bench/sensor_nano/diagnostics` sample. Two sources because these gate a required
+> criterion, and a truncated bag must not be able to quietly zero the CRC error fraction. If
+> **neither** source is available the criterion **fails** — "we could not tell" does not
+> satisfy "≤ 0.1 %". BNO055 calibration levels are recorded as informational metrics only and
+> never gate the result.
 
 ## 14.8 Acceptance
 
@@ -957,9 +1209,20 @@ with identity rotation for the bench fixture unless the operator explicitly supp
 
 ## 15.3 Terminal 1 — launch
 
+**Preferred:**
+
 ```bash
 export RESULTS=~/billiebot_test_results/UT-IMU-02_$(date -u +%Y%m%dT%H%M%SZ)
 
+ros2 run billiebot_sensor_tests run_sensor_test \
+  --test-id UT-IMU-02 \
+  --results-dir "$RESULTS" \
+  --sensor-port "$SENSOR_NANO_PORT"
+```
+
+**Manual alternative:**
+
+```bash
 ros2 launch billiebot_sensor_tests sensor_nano_imu_ekf_bench.launch.py \
   results_dir:="$RESULTS" \
   sensor_port:="$SENSOR_NANO_PORT" \
@@ -967,6 +1230,15 @@ ros2 launch billiebot_sensor_tests sensor_nano_imu_ekf_bench.launch.py \
   duration_sec:=120 \
   record_bag:=true
 ```
+
+> **Implementation note — mark the holds here too**, with the UT-IMU-02 labels:
+> `mark flat`, `mark yaw_plus_90`, `mark yaw_minus_90`, `mark flat_end`. The `flat` →
+> `flat_end` pair is what the return-to-start criterion is measured from.
+>
+> This launch additionally declares `imu_xyz` and `imu_rpy` (default `0.0 0.0 0.0` each) for
+> the bench `base_link → imu_link` static transform, and `ekf_config_file`, which defaults to
+> the installed `config/ekf_imu_bench.yaml`. The production
+> `billiebot_navigation/config/ekf.yaml` is **not** read and **not** modified.
 
 ## 15.4 Terminal 2 — verify ROS contract
 
@@ -1032,6 +1304,21 @@ Also inspect logs:
 ```bash
 grep -Ei 'error|warn|transform|timeout|nan|imu' "$RESULTS/console.log"
 ```
+
+> **Implementation note — TF/timeout evidence comes from the bag, not console.log.**
+> `console.log` contains only the preflight capture unless `ROS_LOG_DIR` is redirected into
+> the results directory, so the "no sustained TF/IMU transform errors" criterion is scored by
+> reading **`/rosout` out of the rosbag**, which this launch records for exactly that reason.
+> The gate counts WARN-and-above messages matching transform/timeout/extrapolation patterns
+> against `ut_imu_02_max_tf_error_messages` (10, provisional), and the first ten matches are
+> quoted verbatim into `metrics.json`. The `grep` above remains a useful human cross-check.
+>
+> **Yaw-sign scoring** compares *changes* in IMU yaw against changes in EKF yaw between marked
+> holds, not absolute yaw — the EKF starts at zero and the IMU does not, so comparing absolute
+> values would fail a correctly-signed filter. Only transitions larger than
+> `ut_imu_02_min_yaw_delta_deg` (20°, provisional) are counted. Return-to-start is gated at
+> `ut_imu_02_max_yaw_return_error_deg` (15°, provisional, newly introduced by this
+> implementation since the plan did not fix a number).
 
 ## 15.7 Acceptance
 
@@ -1121,9 +1408,20 @@ Do not tune these values against ROS output. They must come from independent phy
 
 ## 16.4 Terminal 1 — launch
 
+**Preferred:**
+
 ```bash
 export RESULTS=~/billiebot_test_results/UT-BAT-01_$(date -u +%Y%m%dT%H%M%SZ)
 
+ros2 run billiebot_sensor_tests run_sensor_test \
+  --test-id UT-BAT-01 \
+  --results-dir "$RESULTS" \
+  --sensor-port "$SENSOR_NANO_PORT"
+```
+
+**Manual alternative:**
+
+```bash
 ros2 launch billiebot_sensor_tests sensor_nano_battery_bench.launch.py \
   results_dir:="$RESULTS" \
   sensor_port:="$SENSOR_NANO_PORT" \
@@ -1132,6 +1430,17 @@ ros2 launch billiebot_sensor_tests sensor_nano_battery_bench.launch.py \
 ```
 
 This test is operator-paced; the launch should remain active until Ctrl-C or until all configured points are completed.
+
+> **Implementation note — `duration_sec:=0` semantics.** UT-BAT-01's registry default is
+> `default_duration_sec=0`, and `duration_shutdown_action()` treats the literal `'0'` as
+> "install no shutdown timer". The launch therefore streams **until you press Ctrl-C**, at
+> which point `run_sensor_test` runs the analyzer and prints the verdict. Zero does **not**
+> mean immediate shutdown. `run_sensor_test` prints a reminder to that effect when it starts
+> an operator-paced test. Pass `--duration-sec N` if you want a fixed-length capture instead.
+>
+> The 50 Hz IMU stream keeps running (the firmware always sends it) but is deliberately **not
+> recorded** by this launch: the sweep can last many minutes, and recording a stream the test
+> never analyses would dominate the bag for no evidentiary value.
 
 ## 16.5 Terminal 2 — live topics
 
@@ -1180,7 +1489,7 @@ The 10.30/10.50/10.70 V cluster intentionally characterizes the safety-threshold
 
 ### Ground-truth recording command
 
-For each point use the planned helper:
+For each point use the helper:
 
 ```bash
 ros2 run billiebot_sensor_tests record_battery_point \
@@ -1202,6 +1511,28 @@ ros2 run billiebot_sensor_tests record_battery_point \
 
 After the last point, Ctrl-C Terminal 1 cleanly.
 
+> **Implementation note — what `record_battery_point` actually does.** It subscribes to
+> `/battery_state` and `/bench/battery/adc` for `--sample-window-sec` (default 3.0), then
+> appends **one row** to `exports/battery_points.csv`, pairing your DMM readings with what
+> ROS reported over the same few seconds. Optional extra arguments: `--sample-window-sec`,
+> `--battery-topic`, `--adc-topic`, `--notes`.
+>
+> Rows are **appended, never rewritten**, so an interrupted sweep keeps every point already
+> captured. Column order:
+>
+> ```text
+> t_start_ns, t_end_ns, setpoint_v, dmm_battery_v, dmm_a0_v, dmm_divider_ratio,
+> ros_voltage_mean_v, ros_voltage_std_v, ros_voltage_count,
+> adc_mean, adc_std, adc_count, sample_window_sec, notes
+> ```
+>
+> If no `/battery_state` messages arrive during the window the row is still written (the DMM
+> values are real and hard-won) but a loud warning is printed, and the analyzer cannot use
+> that row for the accuracy regression.
+>
+> The tool is subscribe-only. It never writes back a calibration — UT-BAT-01 measures the
+> error of the *shipped* conversion, and a tool that tuned it would erase the measurement.
+
 ## 16.7 Analysis
 
 ```bash
@@ -1222,6 +1553,20 @@ Expected plots:
 - ADC count vs DMM voltage;
 - divider-node voltage vs battery voltage;
 - time history around each point.
+
+> **Implementation note — plots.** UT-BAT-01 is the first test in this package to write to
+> `plots/`. Four PNGs are produced: `ros_voltage_vs_dmm.png` (with an ideal `y = x` line),
+> `voltage_error_vs_dmm.png` (with the 10.5 V SAFE threshold marked),
+> `adc_vs_dmm.png` and `divider_node_vs_battery.png`. The per-point time history is available
+> from the rosbag, which remains the authoritative record; the plots are non-authoritative
+> visualization. `matplotlib` is imported lazily with the `Agg` backend and its absence
+> degrades to "no plots" rather than failing the verdict.
+>
+> **Never auto-calibrated.** `fit_observed_scale()` reports the volts-per-count the hardware
+> actually exhibits and the `adc_reference_voltage × divider_ratio` product that would imply,
+> but that result is **reporting only** — it is never fed back into the conversion the verdict
+> is computed from. Use it to decide, deliberately and offline, whether a configuration value
+> should change, then re-run the test.
 
 Expected metrics:
 
@@ -1294,9 +1639,20 @@ This is intentionally above the 10.5 V SAFE threshold.
 
 ## 17.4 Terminal 1 — launch Sensor Nano + production mission controller
 
+**Preferred:**
+
 ```bash
 export RESULTS=~/billiebot_test_results/UT-BAT-02_$(date -u +%Y%m%dT%H%M%SZ)
 
+ros2 run billiebot_sensor_tests run_sensor_test \
+  --test-id UT-BAT-02 \
+  --results-dir "$RESULTS" \
+  --sensor-port "$SENSOR_NANO_PORT"
+```
+
+**Manual alternative:**
+
+```bash
 ros2 launch billiebot_sensor_tests sensor_nano_battery_safe_bench.launch.py \
   results_dir:="$RESULTS" \
   sensor_port:="$SENSOR_NANO_PORT" \
@@ -1306,6 +1662,23 @@ ros2 launch billiebot_sensor_tests sensor_nano_battery_safe_bench.launch.py \
 ```
 
 The bench launch shall start the **real** `billiebot_mission` `mission_controller` using the production mission parameters, not a reimplemented mock state machine.
+
+> **Implementation note — it does.** The launch runs
+> `billiebot_mission` / `mission_controller.py` with the production
+> `share/billiebot_mission/config/mission.yaml`, via `replicate_production_node(...)`. The
+> node name is pinned to `mission_controller`: `billiebot_mission` is an `ament_cmake`
+> package whose executable is literally `mission_controller.py`, a ROS node name cannot
+> contain a dot, and `mission.yaml` is keyed `mission_controller:` with no wildcard, so any
+> other name would silently load none of the production parameters. `mission_config_file` is
+> a launch argument if a different parameter file is ever needed.
+>
+> `mission_controller` runs standalone here: it constructs a `NavigateToPose` action client
+> but never waits for a server, so **Nav2 is not required**. `nav2_msgs` must nonetheless be
+> installed, because the node imports `NavigateToPose` at module scope.
+>
+> **Nothing from the motor side is started** — no Motor Nano, no `base_bridge`, no motors, no
+> encoders. A contract test asserts that no `billiebot_base`, `nav2_bringup` or `slam_toolbox`
+> node appears in any Sensor Nano launch description.
 
 ## 17.5 Terminal 2 — place mission in PATROL
 
@@ -1368,10 +1741,23 @@ ros2 topic echo /billiebot/mission_status
 ```bash
 ros2 run billiebot_sensor_tests score_battery_safe \
   --results-dir "$RESULTS" \
+  --profile physical \
   --high-voltage-v 10.70 \
   --low-voltage-v 10.30 \
   --safe-threshold-v 10.50
 ```
+
+> **Implementation note.** `--profile physical` selects UT-BAT-02 scoring (`threshold`
+> selects UT-BAT-02B); it defaults to `physical`. The three voltage arguments are **optional
+> overrides** — each falls back to `sensor_bench.yaml`
+> (`sensor_nano.battery.ut_bat_02_high_voltage_v` / `ut_bat_02_low_voltage_v` /
+> `safe_threshold_v`). They must be optional, because `run_sensor_test` forwards only
+> `--results-dir`, `--config-file` and `--profile` to any analyzer; a required extra argument
+> would make the test unusable through the orchestrator.
+>
+> The latency gate requires `0 ≤ latency ≤ 2.0 s`. The lower bound matters: a *negative*
+> latency means SAFE preceded the trigger, i.e. the run began already SAFE, which is a
+> test-setup fault the scorer surfaces rather than smooths over.
 
 Metrics:
 
@@ -1423,9 +1809,9 @@ Therefore exactly 10.5 V does not currently satisfy the software condition.
 
 The physical ADC path is not the correct way to test equality because analog uncertainty and ADC quantization obscure exact 10.500 V semantics.
 
-## 18.2 Planned software-only check
+## 18.2 Software-only check
 
-The bench scorer shall include or launch a synthetic `BatteryState` publisher directly against the real mission controller and test:
+The bench launches a synthetic `BatteryState` publisher (`battery_threshold_test`) directly against the real mission controller and tests:
 
 ```text
 10.5001 V -> not SAFE
@@ -1442,6 +1828,70 @@ Expected current result before the production bug is fixed:
 This expected failure is a **production requirement discrepancy**, not a Sensor Nano hardware failure.
 
 UT-BAT-02 shall report the hardware safety propagation separately from UT-BAT-02B so the reason is explicit.
+
+### Command
+
+No Sensor Nano, no divider, no ADC, no PSU. This test runs anywhere the workspace builds:
+
+```bash
+export RESULTS=~/billiebot_test_results/UT-BAT-02B_$(date -u +%Y%m%dT%H%M%SZ)
+
+ros2 run billiebot_sensor_tests run_sensor_test \
+  --test-id UT-BAT-02B \
+  --results-dir "$RESULTS"
+```
+
+Manual alternative:
+
+```bash
+ros2 launch billiebot_sensor_tests sensor_nano_battery_threshold_bench.launch.py \
+  results_dir:="$RESULTS" record_bag:=true
+
+ros2 run billiebot_sensor_tests score_battery_safe \
+  --results-dir "$RESULTS" --profile threshold
+```
+
+> **Implementation note — how the three cases are isolated.** `mission_controller` **latches**
+> SAFE: nothing in the node ever leaves it once entered. The `battery_threshold_test` stimulus
+> node therefore runs, per case: publish `reset_voltage` (12.6 V) for `reset_hold_sec` (3 s)
+> → call `/set_mode` with mode 1 (PATROL) to clear the latch → publish the case voltage for
+> `case_hold_sec` (6 s, spanning several of the controller's 2 Hz ticks) and record that
+> window. The windows are written to `exports/threshold_cases.csv`
+> (`case_index, case_voltage_v, expected_safe, window_start_ns, window_end_ns,
+> reset_mode_requested, reset_mode_success, pre_case_mode`) and the scorer evaluates each case
+> **only inside its own window**, so SAFE from a previous case cannot leak into the next
+> verdict. The node ends the launch itself when the case list is complete
+> (`on_exit=Shutdown`); `duration_sec` is only a backstop.
+>
+> `expected_safe` is computed by `safety_metrics.requirement_expects_safe()`, which implements
+> **SYS-PLT-2's `<=`** — the requirement, written in exactly one place. It is never derived
+> from what the code currently does. The production `mission_controller` performs the actual
+> comparison; nothing in the bench re-implements its state machine.
+>
+> 10.5 V is exactly representable in the `float32` of `BatteryState.voltage`, and 10.5001 /
+> 10.4999 land on distinct `float32` values either side of it, so the boundary is genuinely
+> resolvable over the wire.
+
+## 18.3 Actual result (executed 2026-08-14)
+
+UT-BAT-02B is the only test in this campaign that needs no hardware, so it **has been run**
+against the real production `mission_controller`. The verdict was **FAIL**, exactly as
+predicted:
+
+| Case | Observed | SYS-PLT-2 requires | Result |
+|---|---|---|---|
+| 10.5001 V | not SAFE (mode 1) | not SAFE | **PASS** |
+| **10.5000 V** | **not SAFE (mode 1)** | **SAFE** | **FAIL — BLK-05** |
+| 10.4999 V | SAFE (mode 5) | SAFE | **PASS** |
+
+Supporting criteria all passed: 140 `/battery_state` messages, 56 `/billiebot/mission_status`
+messages, maximum status gap 0.508 s against a 2.0 s provisional limit, and all three case
+windows populated with 12 samples each.
+
+This confirms BLK-05 on the shipping code path rather than only in a unit test. The
+production defect was **not** fixed as part of this implementation — doing so would have
+destroyed the evidence this test exists to produce. See §21 BLK-05 for the recommended
+production action.
 
 ---
 
@@ -1671,6 +2121,29 @@ If `base_bridge` is also publishing, stop it.
 
 These are not reasons to abandon the bench campaign. They are explicit follow-on items that the campaign should preserve and help resolve.
 
+> **Implementation note — status of BLK-01…BLK-13 after implementation.** All thirteen were
+> re-checked against the code. **None were silently fixed.** Every one remains open as a
+> production item; the bench disposition described in each is what the implementation
+> actually does.
+>
+> | Blocker | Status after implementation |
+> |---|---|
+> | BLK-01 | Bench bridge implemented in `billiebot_sensor_tests`; no production package touched. Still open for promotion. |
+> | BLK-02 | Confirmed unchanged — `base_bridge.py:313-344` still polls the Motor Nano's A0 and publishes `/battery_state`. No Sensor Nano launch starts it (contract-tested). |
+> | BLK-03 | Confirmed unchanged — `base_driver.yaml` still carries `use_imu: false` and the battery block. Not edited. |
+> | BLK-04 | Confirmed unchanged — production `ekf.yaml:26-36` IMU block still commented out. UT-IMU-02 uses the separate `ekf_imu_bench.yaml`. |
+> | BLK-05 | Confirmed unchanged **and now demonstrated on the real code** — see §18.3. `mission_controller.py:147` still uses `<`. Deliberately not fixed. |
+> | BLK-06 | Confirmed unchanged in `base_bridge.py:339`. The new bridge does **not** repeat it: health is `UNKNOWN`, cells are empty, unmeasured fields are NaN. |
+> | BLK-07 | Still open — divider resistors remain undocumented. `sensor_nano.battery.divider_ratio: 6.0` is nominal and UT-BAT-01 measures its error. |
+> | BLK-08 | Still open — `adc_reference_voltage: 5.0` is nominal, now an explicit parameter instead of `base_bridge.py:321`'s hard-coded literal. UT-BAT-01 quantifies the error. |
+> | BLK-09 | Still open. `run_sensor_test --sensor-port` and the preflight both steer the operator toward `/dev/serial/by-path/...`. |
+> | BLK-10 | Still open — system-design docs not edited. |
+> | BLK-11 | Still open — `imu.xacro` not edited. |
+> | BLK-12 | Still open — bench uses an identity `base_link → imu_link`, overridable via `imu_xyz` / `imu_rpy`. |
+> | BLK-13 | Still open — absolute magnetic heading is non-gating; `/imu/mag` now carries real measurements for later characterization. |
+>
+> Three new blockers found during implementation are appended as BLK-14…BLK-16.
+
 ## BLK-01 — Production Sensor Nano bridge does not yet exist
 
 The current repository has no dedicated production node that owns:
@@ -1886,6 +2359,95 @@ Perform an installed magnetic-environment characterization before relying strong
 
 ---
 
+## BLK-14 — BNO055 fusion world-frame convention is unverified on this hardware
+
+### Problem
+
+The BNO055's NDOF fusion output is referenced to a world frame whose handedness and heading
+origin this project has not yet confirmed on the actual SEN0253. Bosch documents Euler
+heading as increasing *clockwise* from magnetic north (a compass convention), which is not
+the ROS/REP-103 ENU convention, but the relationship between that and the raw quaternion has
+not been measured here.
+
+### Consequence
+
+`/imu/data.orientation` may need a world-frame change before absolute yaw can be trusted by
+anything downstream of the bench.
+
+### Bench-test disposition
+
+The firmware applies **no** remap and the bridge defaults to
+`orientation_frame_convention: bno055_native` (identity), so the bench measures the real
+convention rather than validating a guess. A documented, unit-tested `nwu_to_enu` alternative
+(+90° yaw) is available but not enabled.
+
+This does **not** compromise UT-IMU-01/02 scoring: the commanded-rotation gates use
+body-frame relative rotations, which are provably invariant to the world-frame choice
+(asserted in `test_sensor_nano_imu_metrics.py`), and absolute magnetic heading is non-gating.
+
+### Recommended later production action
+
+After UT-IMU-01 and UT-IMU-02 run on hardware, read the measured axis/sign metrics out of
+`metrics.json`, decide the correct convention once, set it in `sensor_bench.yaml`, and re-run
+UT-IMU-02 to confirm before the production EKF adopts the IMU input.
+
+---
+
+## BLK-15 — IMU covariances are provisional placeholders, not characterized values
+
+### Problem
+
+`sensor_msgs/Imu` covariance fields must be populated for `robot_localization` to behave
+sanely — an all-zero covariance is read as "unknown" and replaced by an internal near-zero
+default, which destabilizes the filter. No noise characterization of this specific BNO055 has
+been performed.
+
+### Consequence
+
+The published covariances are engineering placeholders. They must not be read as an accuracy
+claim for this unit, and EKF tuning based on them is provisional.
+
+### Bench-test disposition
+
+The diagonals live in `sensor_nano.imu_covariance.*` in `sensor_bench.yaml`, are explicitly
+labelled provisional in both the config comments and the bridge source, and are configurable
+without a code change. UT-IMU-02 is a compatibility test, not an accuracy qualification, so
+these values do not gate it.
+
+### Recommended later production action
+
+Characterize BNO055 orientation/gyro/accelerometer noise on a stationary fixture (Allan
+variance or a simple stationary-variance capture), then replace the placeholders with measured
+values before the production EKF relies on IMU fusion.
+
+---
+
+## BLK-16 — Individual 3S cell voltages are not observable
+
+### Problem
+
+The divider measures pack voltage only. `sensor_msgs/BatteryState` has a `cell_voltage` array,
+and `base_bridge.py:331` currently fills it by dividing pack voltage by cell count — which
+manufactures per-cell data that was never measured and would mask a badly imbalanced pack.
+
+### Consequence
+
+Cell imbalance is undetectable. A pack whose cells have diverged can read a healthy total
+while an individual cell is below its safe floor.
+
+### Bench-test disposition
+
+The new bridge publishes an **empty** `cell_voltage` array rather than a fabricated one. Cell
+balancing and state-of-charge are already listed as explicit non-scope (§22).
+
+### Recommended later production action
+
+Decide whether cell-level sensing is required for the platform. If it is, add a balance-lead
+tap or a battery-management IC; if it is not, remove the synthesized `cell_voltage` from
+`base_bridge` so no consumer can mistake it for a measurement.
+
+---
+
 # 22. Explicit Non-Scope
 
 These tests do not verify:
@@ -1934,6 +2496,11 @@ Run in this order:
 
 Do not proceed to the safety-chain test until UT-BAT-01 demonstrates that the measured voltage is trustworthy around 10.5 V.
 
+> **Implementation note — step 12 is already done.** UT-BAT-02B needs no hardware and has been
+> executed (§18.3). It can be re-run at any point, in any order, independently of the physical
+> steps — it is only listed last because it is logically the final acceptance item. Steps 1–11
+> remain outstanding and are the actual bench campaign.
+
 ---
 
 # 24. Campaign Completion Criteria
@@ -1972,19 +2539,43 @@ This plan was derived from the current BillieBot repository and the existing Bil
 
 ---
 
-# 26. Approval Gate
+# 26. Implementation Status
 
-**Do not implement this plan yet.**
+The approval gate has been passed and the software is implemented.
 
-After operator review:
+## 26.1 What has been verified (software / build only)
 
-- revise this document if requested;
-- obtain explicit approval;
-- then create a separate Claude Code Opus 5 implementation prompt.
+| Activity | Result |
+|---|---|
+| `colcon build --packages-select billiebot_sensor_tests` | clean |
+| `colcon test --packages-select billiebot_sensor_tests` | **445 tests, 0 errors, 0 failures, 0 skipped** |
+| Firmware compile, `arduino-cli --fqbn arduino:avr:nano:cpu=atmega328` | 17370 B flash (56 %), 760 B SRAM (37 %); no warnings at `--warnings all` |
+| All six new console scripts resolve under `ros2 run` | yes |
+| All five new launch files load and `--show-args` | yes |
+| All 16 registry IDs resolve (11 pre-existing + 5 new) | yes |
+| Analyzer `--self-test` paths | all PASS |
+| **UT-BAT-02B executed end to end** | **FAIL at 10.5000 V, as predicted — §18.3** |
 
-That implementation prompt shall instruct Claude Code to:
-- implement the Sensor Nano firmware;
-- implement the bench ROS bridge, launch files, analyses, and tests;
-- use the existing `billiebot_sensor_tests` common infrastructure where appropriate;
-- add required `setup.py` console-script entries if necessary;
-- preserve and report production blockers rather than silently changing unrelated production behavior unless explicitly authorized.
+## 26.2 What still requires the physical bench
+
+**No hardware PASS is claimed for any test.** These need the Sensor Nano, the SEN0253, the
+divider and a bench PSU, and have **not** been run:
+
+- **UT-IMU-01** — BNO055/BMP280 acquisition, rates, orientation response, data integrity
+- **UT-IMU-02** — `/imu/data` contract and `robot_localization` compatibility
+- **UT-BAT-01** — divider ratio, ADC behaviour, voltage accuracy versus DMM
+- **UT-BAT-02** — physical low-voltage-to-SAFE propagation
+
+Also still owed by the bench campaign: the measured divider resistor values (BLK-07), the
+measured Nano 5 V/AVcc rail (BLK-08), the Sensor Nano USB identity/path (BLK-09), and the
+BNO055 world-frame convention (BLK-14).
+
+## 26.3 Deliberately not done
+
+The production defects this campaign exists to detect were **not** fixed:
+`mission_controller.py`'s strict `<` (BLK-05), `base_bridge`'s battery ownership (BLK-02) and
+`HEALTH_COLD` mapping (BLK-06), the commented-out production EKF IMU block (BLK-04),
+`base_driver.yaml` (BLK-03), and `imu.xacro` (BLK-11) are all untouched. Fixing BLK-05 in
+particular would have destroyed the evidence UT-BAT-02B is designed to produce.
+
+Each remains an explicit production item in §21, with a recommended later action.

@@ -45,15 +45,26 @@ def declare_common_bench_args(default_duration_sec: str = '60') -> list:
     ]
 
 
-def manifest_bootstrap_action(test_id: str, sensor: str, sensor_model: str = '') -> OpaqueFunction:
+def manifest_bootstrap_action(test_id: str, sensor: str, sensor_model: str = '',
+                               preflight_context_args: tuple = ()) -> OpaqueFunction:
     """Creates the result directory, writes the initial manifest.yaml, and runs the
     sensor's hardware/software preflight — all before any Node in the launch file starts,
-    since this is a plain top-level action and launch executes top-level actions in order."""
+    since this is a plain top-level action and launch executes top-level actions in order.
+
+    `preflight_context_args` names launch arguments whose resolved values are handed to the
+    preflight (e.g. `('sensor_port',)` so the Sensor Nano preflight can check that specific
+    device rather than guessing). The values are also recorded in manifest.yaml's
+    `parameters`, so a result always states which port it was captured from."""
 
     def _bootstrap(context, *args, **kwargs):
         results_dir = LaunchConfiguration('results_dir').perform(context)
         config_file = LaunchConfiguration('config_file').perform(context)
         sensor_serial = LaunchConfiguration('sensor_serial').perform(context)
+
+        preflight_context = {
+            name: LaunchConfiguration(name).perform(context)
+            for name in preflight_context_args
+        }
 
         result_dir = BenchResultDir.create(results_dir)
         manifest = ManifestWriter(result_dir)
@@ -62,10 +73,10 @@ def manifest_bootstrap_action(test_id: str, sensor: str, sensor_model: str = '')
             sensor_model=sensor_model,
             sensor_serial=sensor_serial,
             launch_command=shlex.join(sys.argv),
-            parameters={},
+            parameters=dict(preflight_context),
             config_file=config_file,
         )
-        run_preflight(sensor, result_dir)
+        run_preflight(sensor, result_dir, context=preflight_context)
         return []
 
     return OpaqueFunction(function=_bootstrap)
@@ -159,16 +170,25 @@ def record_bag_action(topics: list) -> list:
 
 
 def replicate_production_node(package: str, executable: str, config_file: str,
-                               extra_params: dict) -> Node:
+                               extra_params: dict, name: str = None) -> Node:
     """billiebot_sensor_tests never edits billiebot_bringup or the production packages'
     own launch files — every detection-bench launch inlines its own Node(...) replicating
     the corresponding bringup rung, merging bench-only param overrides on top of the
     production config file. When every bench-only param is at its documented sentinel
-    default, this Node call is behaviorally identical to the bringup rung."""
+    default, this Node call is behaviorally identical to the bringup rung.
+
+    `name` defaults to `executable`, which is right for the ament_python packages whose
+    executables are bare names. It must be given for an ament_cmake package that installs
+    its entry point with a file extension: billiebot_mission's executable is literally
+    `mission_controller.py`, and a ROS node name cannot contain a dot — mission.launch.py
+    itself pairs `executable='mission_controller.py'` with `name='mission_controller'` for
+    the same reason. The name also has to match the key in the production params file
+    (`mission.yaml` is keyed `mission_controller:` with no wildcard), or none of the
+    production parameters would load."""
     return Node(
         package=package,
         executable=executable,
-        name=executable,
+        name=name or executable,
         parameters=[config_file, extra_params],
         output='screen',
     )

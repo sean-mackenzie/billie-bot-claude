@@ -47,6 +47,43 @@ def parse_quantity(value) -> float:
     return float(m.group(0))
 
 
+def load_ground_truth_segments(result_dir, default_duration_ns: int = int(30e9)) -> list:
+    """Read exports/ground_truth_segments.csv into `[{'label', 't_start_ns', 't_end_ns',
+    'row'}, ...]`, or `[]` when the operator marked nothing.
+
+    End-time resolution matches the rule score_thermal_blob.py already uses: an explicit
+    `t_end_ns` column wins, otherwise a segment runs until the next mark, and the final
+    segment gets `default_duration_ns`. Labels are lower-cased and stripped so the operator's
+    typing is not part of the contract.
+    """
+    path = Path(result_dir.exports_dir) / 'ground_truth_segments.csv'
+    if not path.exists():
+        return []
+
+    with open(path, 'r') as f:
+        rows = list(csv.DictReader(f))
+
+    segments = []
+    for i, row in enumerate(rows):
+        try:
+            t_start = int(row['t_start_ns'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if row.get('t_end_ns'):
+            t_end = int(row['t_end_ns'])
+        elif i + 1 < len(rows):
+            t_end = int(rows[i + 1]['t_start_ns'])
+        else:
+            t_end = t_start + int(default_duration_ns)
+        segments.append({
+            'label': (row.get('label') or '').strip().lower(),
+            't_start_ns': t_start,
+            't_end_ns': t_end,
+            'row': row,
+        })
+    return segments
+
+
 class GroundTruthMarkerNode(Node):
     def __init__(self):
         super().__init__('ground_truth_marker_node')

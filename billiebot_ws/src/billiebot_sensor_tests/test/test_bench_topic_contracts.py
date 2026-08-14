@@ -367,3 +367,131 @@ def test_bench_publisher_previews_default_off_outside_a_launch_file():
     assert defaults['fps'] == 5.0
     assert defaults['point_cloud_stride'] == 4
     assert defaults['points_preview_stride'] == 16
+
+
+# --- 6. Sensor Nano recorded-topic contracts ---------------------------------------------
+
+_SENSOR_NANO_LAUNCH_FILES = [
+    'sensor_nano_imu_bench.launch.py',
+    'sensor_nano_imu_ekf_bench.launch.py',
+    'sensor_nano_battery_bench.launch.py',
+    'sensor_nano_battery_safe_bench.launch.py',
+    'sensor_nano_battery_threshold_bench.launch.py',
+]
+
+
+def _perform(context, value) -> str:
+    """Resolve a launch_ros field that may be either a plain str or a substitution list.
+
+    launch_ros keeps a literal `package='billiebot_mission'` as a bare str but normalizes a
+    `LaunchConfiguration(...)` into a list of substitutions, so `list(value)` alone would
+    shred a plain string into characters."""
+    if isinstance(value, str):
+        return value
+    return perform_substitutions(context, list(value))
+
+
+@pytest.mark.parametrize('filename', _SENSOR_NANO_LAUNCH_FILES)
+def test_sensor_nano_launch_records_a_bag(filename):
+    ld = _load_launch_module(filename).generate_launch_description()
+    assert _recorded_topics(ld), f'{filename} records no topics'
+
+
+@pytest.mark.parametrize('filename', _SENSOR_NANO_LAUNCH_FILES)
+def test_sensor_nano_bags_never_use_a_record_all(filename):
+    """`ros2 bag record -a` would sweep in every unrelated topic on the graph and make the
+    evidence set depend on whatever else happened to be running."""
+    ld = _load_launch_module(filename).generate_launch_description()
+    for entity in ld.entities:
+        if isinstance(entity, ExecuteProcess):
+            literals = [
+                c[0].text for c in entity.cmd
+                if isinstance(c, list) and len(c) == 1 and hasattr(c[0], 'text')
+            ]
+            if 'record' in literals:
+                assert '-a' not in literals and '--all' not in literals
+
+
+def test_ut_imu_01_records_the_topics_its_analyzer_reads():
+    topics = set(_recorded_topics(
+        _load_launch_module('sensor_nano_imu_bench.launch.py').generate_launch_description()
+    ))
+    configured = _bench_config()['sensor_nano']['topics']
+    for key in ('imu', 'pressure', 'temperature', 'diagnostics'):
+        assert configured[key] in topics, f'{configured[key]} is analyzed but not recorded'
+
+
+def test_ut_imu_02_records_rosout_because_tf_errors_are_scored_from_the_bag():
+    # console.log holds only preflight output unless ROS_LOG_DIR is redirected, so the
+    # sustained-TF-failure gate reads /rosout out of the bag instead.
+    topics = set(_recorded_topics(
+        _load_launch_module(
+            'sensor_nano_imu_ekf_bench.launch.py').generate_launch_description()
+    ))
+    configured = _bench_config()['sensor_nano']['topics']
+    assert configured['rosout'] in topics
+    assert configured['filtered_odometry'] in topics
+
+
+def test_ut_bat_01_does_not_record_the_fifty_hertz_imu_stream():
+    """The battery sweep is operator-paced and can run for many minutes; recording 50 Hz of
+    IMU it never analyses would dominate the bag for no evidentiary value."""
+    topics = set(_recorded_topics(
+        _load_launch_module(
+            'sensor_nano_battery_bench.launch.py').generate_launch_description()
+    ))
+    configured = _bench_config()['sensor_nano']['topics']
+    assert configured['imu'] not in topics
+    assert configured['battery'] in topics
+    assert configured['battery_adc'] in topics
+
+
+@pytest.mark.parametrize('filename', [
+    'sensor_nano_battery_safe_bench.launch.py',
+    'sensor_nano_battery_threshold_bench.launch.py',
+])
+def test_safe_propagation_launches_record_both_sides_of_the_safety_chain(filename):
+    topics = set(_recorded_topics(_load_launch_module(filename).generate_launch_description()))
+    configured = _bench_config()['sensor_nano']['topics']
+    assert configured['battery'] in topics
+    assert configured['mission_status'] in topics
+
+
+@pytest.mark.parametrize('filename', [
+    'sensor_nano_battery_safe_bench.launch.py',
+    'sensor_nano_battery_threshold_bench.launch.py',
+])
+def test_safe_propagation_launches_run_the_real_production_mission_controller(filename):
+    """UT-BAT-02/02B must exercise the shipping SAFE logic, not a reimplementation. The node
+    name must stay `mission_controller` too: a ROS node name cannot contain a dot, and
+    mission.yaml is keyed `mission_controller:` with no wildcard."""
+    ld = _load_launch_module(filename).generate_launch_description()
+    node = _node_named(ld, 'mission_controller')
+    assert node is not None, f'{filename} does not start the production mission controller'
+    context = _context(ld)
+    package = _perform(context, node._Node__package)
+    executable = _perform(context, node._Node__node_executable)
+    assert package == 'billiebot_mission'
+    assert executable == 'mission_controller.py'
+
+
+@pytest.mark.parametrize('filename', _SENSOR_NANO_LAUNCH_FILES)
+def test_sensor_nano_launches_never_start_the_motor_side_of_the_robot(filename):
+    """The Motor Nano, base_bridge and Nav2 are excluded from this whole campaign. In
+    particular base_bridge still publishes its own /battery_state from the Motor Nano's A0
+    (BLK-02), so starting it would put two publishers on the topic under test."""
+    ld = _load_launch_module(filename).generate_launch_description()
+    context = _context(ld)
+    for entity in ld.entities:
+        if not isinstance(entity, Node):
+            continue
+        package = _perform(context, entity._Node__package)
+        assert package not in ('billiebot_base', 'nav2_bringup', 'slam_toolbox')
+
+
+def test_sensor_nano_thresholds_contain_no_visualization_knobs():
+    """Same rule the OAK-D block already follows: nothing under thresholds may be a display
+    setting, or a Foxglove tweak could move a pass/fail boundary."""
+    thresholds = json.dumps(_bench_config()['sensor_nano']['thresholds'])
+    for banned in ('preview', 'jpeg', 'visualization', 'stride'):
+        assert banned not in thresholds

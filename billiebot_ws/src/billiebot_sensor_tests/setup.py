@@ -40,6 +40,15 @@ setup(
             'audio_capture_node = billiebot_sensor_tests.audio.audio_capture_node:main',
             'analyze_audio = billiebot_sensor_tests.audio.analyze_audio:main',
             'score_audio_classifier = billiebot_sensor_tests.audio.score_audio_classifier:main',
+            'sensor_nano_bridge = billiebot_sensor_tests.sensor_nano.sensor_nano_bridge:main',
+            'analyze_sensor_nano_imu = billiebot_sensor_tests.sensor_nano.analyze_imu:main',
+            'analyze_sensor_nano_battery = '
+            'billiebot_sensor_tests.sensor_nano.analyze_battery:main',
+            'record_battery_point = '
+            'billiebot_sensor_tests.sensor_nano.battery_point_recorder:main',
+            'battery_threshold_test = '
+            'billiebot_sensor_tests.sensor_nano.battery_threshold_test:main',
+            'score_battery_safe = billiebot_sensor_tests.sensor_nano.score_battery_safe:main',
         ],
     },
 )

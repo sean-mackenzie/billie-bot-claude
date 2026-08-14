@@ -3,7 +3,7 @@
 <package format="3">
   <name>billiebot_sensor_tests</name>
   <version>0.1.0</version>
-  <description>Bench-test suite for BillieBot sensors (OAK-D Lite, MLX90640, Pi Camera 3 NoIR, reSpeaker XVF3800), independent of chassis/nav/mission bringup and of billiebot_tests' mock-stack integration checks</description>
+  <description>Bench-test suite for BillieBot sensors (OAK-D Lite, MLX90640, Pi Camera 3 NoIR, reSpeaker XVF3800, and the Sensor Nano platform-sensor unit carrying a DFRobot SEN0253 BNO055/BMP280 plus the battery-sense divider), independent of chassis/nav bringup and of billiebot_tests' mock-stack integration checks. The Sensor Nano battery tests are the one exception to "independent of mission": UT-BAT-02/02B deliberately drive the real billiebot_mission controller, because the shipping SAFE logic is what is under test.</description>
   <maintainer email="billie@todo.todo">billie</maintainer>
   <license>MIT</license>
 
@@ -19,6 +19,24 @@
        Already present on both hosts as a transitive matplotlib dependency; declared here
        because the bench preview path depends on it directly. -->
   <exec_depend>python3-pil</exec_depend>
+
+  <!-- Sensor Nano serial link (sensor_nano/sensor_nano_bridge.py and the sensor_nano
+       preflight both open the port with pyserial). -->
+  <exec_depend>python3-serial</exec_depend>
+
+  <!-- UT-BAT-01 is the first test in this package to write plots/ PNGs
+       (sensor_nano/analyze_battery.py). The import is guarded so a host without matplotlib
+       still produces a valid verdict, but the dependency is now real rather than assumed. -->
+  <exec_depend>python3-matplotlib</exec_depend>
+
+  <!-- UT-IMU-02 runs robot_localization's ekf_node against a bench-only YAML, and publishes
+       the bench base_link->imu_link transform with tf2_ros. -->
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+
+  <!-- UT-BAT-02/02B launch the REAL production mission controller rather than a mock. -->
+  <exec_depend>billiebot_mission</exec_depend>
 
   <exec_depend>billiebot_perception</exec_depend>
   <exec_depend>launch</exec_depend>

@@ -41,11 +41,26 @@ def main(argv=None) -> int:
     parser.add_argument('--start-foxglove', default='true', choices=['true', 'false'])
     parser.add_argument('--profile', default=None,
                          help='Override the test spec default analysis profile')
+    parser.add_argument('--sensor-port', default='',
+                         help='Serial device for tests that own one (the Sensor Nano tests). '
+                              'Only forwarded when non-empty, since a launch file that does '
+                              'not declare the argument would reject it.')
+    parser.add_argument('--baudrate', default='',
+                         help='Serial baud rate override; forwarded only when non-empty')
     parser.add_argument('--extra-launch-arg', action='append', default=[],
                          help='key:=value, repeatable, forwarded to the launch file')
     args = parser.parse_args(argv)
 
     spec = TEST_REGISTRY[args.test_id]
+
+    if 'sensor_port' in spec.required_extra_args and not args.sensor_port:
+        print(
+            f'[run_sensor_test] {args.test_id} needs a serial device: pass '
+            '--sensor-port /dev/serial/by-path/<entry>. Prefer a by-path entry over '
+            '/dev/ttyUSB0 -- two CH340 Nanos may not expose unique serial IDs (BLK-09).',
+            file=sys.stderr,
+        )
+        return 2
     results_dir = args.results_dir or _default_results_dir(args.test_id)
     duration_sec = (
         args.duration_sec if args.duration_sec is not None else spec.default_duration_sec
@@ -65,9 +80,23 @@ def main(argv=None) -> int:
         'config_file': config_file,
         'sensor_serial': args.sensor_serial,
     }
+    # Injected only when set: IncludeLaunchDescription rejects an argument the target launch
+    # file never declared, so unconditionally passing these would break the OAK-D, thermal,
+    # NoIR and audio launch files.
+    if args.sensor_port:
+        launch_arguments['sensor_port'] = args.sensor_port
+    if args.baudrate:
+        launch_arguments['baudrate'] = args.baudrate
     for pair in args.extra_launch_arg:
         key, _, value = pair.partition(':=')
         launch_arguments[key] = value
+
+    if spec.operator_paced and duration_sec == 0:
+        print(
+            f'[run_sensor_test] {args.test_id} is operator-paced: the launch will keep '
+            'running until you press Ctrl-C, and analysis runs immediately afterwards. '
+            'Pass --duration-sec N for a fixed-length capture instead.'
+        )
 
     ld = LaunchDescription([
         IncludeLaunchDescription(
