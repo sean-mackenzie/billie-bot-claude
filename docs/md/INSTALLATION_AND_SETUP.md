@@ -480,15 +480,32 @@ The two robot computers discover each other via **static unicast peers** (multic
 
 1. In your router, give both boards **DHCP reservations** (either matching the shipped IPs, or your own choices).
 2. If you change the IPs, edit the two `<Peer address="…"/>` lines in the **source** file above and rebuild (`colcon build --symlink-install`) on both machines — the launch files point `CYCLONEDDS_URI` at the *installed* copy of that file.
-3. Two things the launch files do **not** do, so you must (both boards, `~/.bashrc`):
+3. Make the DDS settings **persistent** on each board. The two machines configure this differently because they run ROS differently — the Jetson is native, the Pi is containerized:
 
-```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp   # launch files set CYCLONEDDS_URI but not the RMW itself
-# ROS_DOMAIN_ID defaults to 0 everywhere; only set it if your network has other ROS 2 systems:
-# export ROS_DOMAIN_ID=42
-```
+   **Jetson** — native ROS 2, so this goes in the user's `~/.bashrc` (set up in [§2.2.3](#223-clone-build-configure)):
+
+   ```bash
+   source /opt/ros/humble/setup.bash
+   source ~/billie-bot-claude/billiebot_ws/install/setup.bash
+
+   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+   export ROS_DOMAIN_ID=0
+   export ROS_LOCALHOST_ONLY=0
+   export CYCLONEDDS_URI="file://$HOME/billie-bot-claude/billiebot_ws/install/billiebot_bringup/share/billiebot_bringup/config/cyclonedds.xml"
+   ```
+
+   **Pi** — ROS 2 runs in the `billiebot-pi` container, so the same four settings are baked into the image as `ENV` ([§2.3.3](#233-the-pi-ros-container)), which applies them to every process in the container rather than only to interactive shells. The container's `/root/.bashrc` sources ROS and the overlay:
+
+   ```bash
+   source /opt/ros/humble/setup.bash
+   [ -f /ws/install/setup.bash ] && source /ws/install/setup.bash
+   ```
+
+   Note the path difference: the workspace is `~/billie-bot-claude/billiebot_ws` on the Jetson and `/ws` inside the Pi container (that's the bind mount), so the two `CYCLONEDDS_URI` values differ while pointing at the same installed file.
 
 Without `RMW_IMPLEMENTATION`, Humble silently uses Fast DDS and the CycloneDDS peers file is ignored — the classic "each machine only sees its own topics" failure.
+
+`jetson.launch.py` and `pi.launch.py` set `CYCLONEDDS_URI` themselves, so the persistent value is what covers everything *else*: `ros2 topic list`, the ROS daemon, a standalone `foxglove_bridge`, and the single-rung launches `01`–`14`, none of which set it. Matching them means a topic is visible the same way whichever command you happen to run.
 
 ## 2.2 Jetson Orin Nano
 
@@ -549,7 +566,25 @@ jetson$ colcon build --symlink-install
 jetson$ echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc
 jetson$ echo 'source ~/billie-bot-claude/billiebot_ws/install/setup.bash' >> ~/.bashrc
 jetson$ echo 'export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp' >> ~/.bashrc
+jetson$ echo 'export ROS_DOMAIN_ID=0' >> ~/.bashrc
+jetson$ echo 'export ROS_LOCALHOST_ONLY=0' >> ~/.bashrc
+jetson$ echo 'export CYCLONEDDS_URI="file://$HOME/billie-bot-claude/billiebot_ws/install/billiebot_bringup/share/billiebot_bringup/config/cyclonedds.xml"' >> ~/.bashrc
 ```
+
+The Jetson runs ROS 2 **natively** — there is no BillieBot container on this board, so `~/.bashrc`
+is where the persistent configuration lives. Note the single quotes on the last line: they keep
+`$HOME` unexpanded in the file, so the line resolves at shell start rather than being frozen to
+whoever ran the `echo`. Open a new shell (or `source ~/.bashrc`) for these to take effect.
+
+**Verify the environment**, in a fresh login shell:
+
+```bash
+jetson$ env | grep -E 'RMW_IMPLEMENTATION|ROS_DOMAIN_ID|ROS_LOCALHOST_ONLY|CYCLONEDDS_URI'
+jetson$ test -f "${CYCLONEDDS_URI#file://}" && echo "[PASS] peers file exists" || echo "[FAIL] peers file missing"
+```
+
+Expect `rmw_cyclonedds_cpp`, `0`, `0`, and a `file://…/install/billiebot_bringup/share/billiebot_bringup/config/cyclonedds.xml`
+URI that resolves — the installed copy, which exists only after the `colcon build` above.
 
 Install the **YOLOv8n blob** for the OAK-D ([Appendix B](#appendix-b--ml-model-assets)) and set its path in `billiebot_ws/src/billiebot_perception/config/perception.yaml` (`oakd_dog_detector → model_path`). The parameter ships empty; in real (non-mock) mode the node now treats an empty or missing blob as fatal — it logs an ERROR and exits non-zero rather than idling silently, so a missing model surfaces immediately instead of a perception chain that looks "up" but reports nothing.
 
@@ -695,10 +730,10 @@ pi$ docker run --rm hello-world
 
 ### 2.3.3 The Pi ROS container
 
-Save as `~/billiebot-pi.Dockerfile` on the Pi:
+Save as `~/billiebot-docker/Dockerfile` on the Pi (`mkdir -p ~/billiebot-docker` first):
 
 ```dockerfile
-FROM ros:humble
+FROM ros:humble-ros-base-jammy
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rmw-cyclonedds-cpp \
@@ -711,11 +746,22 @@ RUN pip3 install --no-cache-dir \
     adafruit-blinka adafruit-circuitpython-mlx90640 \
     pyyaml jinja2 matplotlib fastapi uvicorn markdown
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ENV ROS_DOMAIN_ID=0
+ENV ROS_LOCALHOST_ONLY=0
+ENV CYCLONEDDS_URI=file:///ws/install/billiebot_bringup/share/billiebot_bringup/config/cyclonedds.xml
 WORKDIR /ws
 RUN echo 'source /opt/ros/humble/setup.bash' >> /root/.bashrc && \
     echo '[ -f /ws/install/setup.bash ] && source /ws/install/setup.bash' >> /root/.bashrc
 CMD ["bash"]
 ```
+
+The DDS settings are `ENV` rather than `.bashrc` exports on purpose: `ENV` applies to **every**
+process in the container — `docker run`/`docker exec` non-interactive commands, launch files,
+and anything systemd or a supervisor starts later — whereas a `/root/.bashrc` export only
+reaches interactive Bash shells. The two `.bashrc` lines stay because sourcing the overlay is
+a convenience for the shells you type in; the DDS configuration is not optional and must not
+depend on how the process was started. Note the `CYCLONEDDS_URI` points at the **installed**
+copy under `/ws/install/...`, which exists only after the `colcon build` below has run.
 
 Create the data directories on the **host** (bind-mounted so the SQLite DB and reports survive container rebuilds), clone, build, run:
 
@@ -723,7 +769,7 @@ Create the data directories on the **host** (bind-mounted so the SQLite DB and r
 pi$ sudo mkdir -p /var/lib/billiebot/snapshots /var/lib/billiebot/reports
 pi$ sudo chown -R $USER /var/lib/billiebot
 pi$ git clone https://github.com/sean-mackenzie/billie-bot-claude.git ~/billie-bot-claude
-pi$ docker build -t billiebot-pi -f ~/billiebot-pi.Dockerfile .
+pi$ docker build -t billiebot-pi -f ~/billiebot-docker/Dockerfile .
 pi$ docker run -it --name billiebot-pi \
       --privileged \
       --network host \
@@ -760,7 +806,7 @@ EOF
 
 ## 2.5 Multi-machine bringup
 
-1. Confirm §2.1 is done on both machines (IPs match `cyclonedds.xml`, `RMW_IMPLEMENTATION` exported, workspace rebuilt after any IP edit).
+1. Confirm §2.1 is done on both machines (IPs match `cyclonedds.xml`, the DDS environment is in place — Jetson `~/.bashrc`, Pi image `ENV` — and the workspace was rebuilt after any IP edit).
 2. Start the Jetson side — with the map of the space you are actually operating in ([why](#nav2-needs-a-map)):
 
    ```bash
@@ -898,7 +944,7 @@ No `requirements.txt` or dependency lockfile exists in the repo; this appendix i
 | `dialout` group | Jetson | Arduino + RPLidar serial |
 | `i2c`, `audio`, `video` groups; I²C enabled; `dtparam=audio=off` + I²S DAC overlay | Pi | MLX90640, ReSpeaker, MAX98357A |
 | `billiebot_bringup/udev/99-billiebot.rules` (VID `03e7` MODE 0666), installed by `scripts/install_udev_rules.sh` | Jetson | OAK-D Lite |
-| DHCP reservations + `cyclonedds.xml` peers + `RMW_IMPLEMENTATION` export | Jetson, Pi, (Mac) | §2.1 |
+| DHCP reservations + `cyclonedds.xml` peers + the DDS environment (`RMW_IMPLEMENTATION`, `ROS_DOMAIN_ID`, `ROS_LOCALHOST_ONLY`, `CYCLONEDDS_URI`) — Jetson `~/.bashrc`, Pi image `ENV` | Jetson, Pi, (Mac) | §2.1 |
 
 # Appendix B — ML model assets
 
@@ -944,7 +990,7 @@ The detector creates a `YoloSpatialDetectionNetwork` with a **416×416** preview
 | Symptom | Cause / fix |
 |---|---|
 | Docker build/run is very slow on the Mac; `docker image inspect` shows `amd64` | You based on an amd64-only image (e.g. `osrf/ros:humble-desktop`). Use `ros:humble` per §1.3 — it's arm64-native. |
-| Machines can't see each other's topics | `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` not exported (launch files only set `CYCLONEDDS_URI`); or IPs in `cyclonedds.xml` don't match reality; or you edited the source XML but didn't rebuild (the launch files read the **installed** copy). |
+| Machines can't see each other's topics | `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` not in effect — check the Jetson's `~/.bashrc` and the Pi image's `ENV` (§2.1); launch files only set `CYCLONEDDS_URI`. Or IPs in `cyclonedds.xml` don't match reality; or you edited the source XML but didn't rebuild (the launch files read the **installed** copy). |
 | `ros2 topic list` differs between shells on one machine | One shell hasn't sourced `install/setup.bash`, or has a different `ROS_DOMAIN_ID`/`RMW_IMPLEMENTATION`. `ros2 daemon stop` after changing env vars. |
 | `map_server: yaml-filename parameter is empty`, `amcl: Waiting for map....`, `Timed out waiting for transform from base_link to map`, or Nav2 stuck at `Activating planner_server` | No `map:=` argument — it defaults to empty, and `mock:=true` does **not** remove the need for one. Pass an absolute path to a Nav2 map YAML whose `image:` names an existing file. See [§1.6 Why Nav2 needs a map](#nav2-needs-a-map); checklist in [§2.2.3](#223-clone-build-configure). |
 | `serial.SerialException: Permission denied` | User not in `dialout` (Jetson) — re-login after `usermod`. |
