@@ -154,6 +154,136 @@ audio:
       dt_aud_02_max_mean_circular_error_deg: 15.0
       dt_aud_02_min_within_15deg_fraction: 0.80
 
+sensor_nano:
+  # Sensor Nano (Arduino Nano V3) carrying a DFRobot SEN0253 (BNO055 + BMP280) and the
+  # battery-sense divider on A0. Covers UT-IMU-01/02 and UT-BAT-01/02/02B.
+  #
+  # These thresholds live here rather than in a separate sensor_nano_bench.yaml because
+  # run_sensor_test passes exactly one --config-file to every analyzer; a second thresholds
+  # file would either break orchestrated runs or become a competing source of truth. The
+  # bench EKF parameters DO live separately, in config/ekf_imu_bench.yaml, because they are
+  # robot_localization node parameters rather than acceptance thresholds.
+  topics:
+    imu: /imu/data
+    mag: /imu/mag
+    battery: /battery_state
+    battery_adc: /bench/battery/adc
+    pressure: /barometer/pressure
+    temperature: /barometer/temperature
+    diagnostics: /bench/sensor_nano/diagnostics
+    filtered_odometry: /odometry/filtered
+    mission_status: /billiebot/mission_status
+    rosout: /rosout
+  frames:
+    imu: imu_link
+    barometer: imu_link
+    battery: base_link
+  serial:
+    baudrate: 115200
+    # Seconds discarded after opening the port: asserting DTR resets the Nano into its
+    # bootloader, and anything read during that window is bootloader noise.
+    startup_settle_sec: 2.5
+  rates:
+    imu_hz: 50.0
+    magnetometer_hz: 10.0
+    battery_hz: 5.0
+    barometer_hz: 2.0
+    status_hz: 1.0
+  orientation:
+    # 'bno055_native' publishes the BNO055 fusion quaternion unchanged; 'nwu_to_enu' applies
+    # the documented +90 deg yaw world-frame change in sensor_nano/imu_metrics.py. Native is
+    # the default on purpose -- the chip's fusion world frame is not yet verified on this
+    # hardware (BLK-14), and the commanded-rotation gates are computed from body-frame
+    # relative rotations, which are invariant to this choice.
+    frame_convention: bno055_native
+  imu_covariance:
+    # PROVISIONAL diagonals, not a characterized accuracy claim for this unit (BLK-15).
+    # Non-zero because robot_localization treats an all-zero covariance as unknown and
+    # substitutes its own tiny default, which destabilizes the filter.
+    orientation_diagonal: [0.01, 0.01, 0.05]
+    angular_velocity_diagonal: [0.005, 0.005, 0.005]
+    linear_acceleration_diagonal: [0.1, 0.1, 0.1]
+  battery:
+    # Nominal until the installed resistors are measured (BLK-07) and the Nano's AVcc rail
+    # is measured (BLK-08). UT-BAT-01 exists to quantify the error in exactly these two
+    # numbers -- do not tune them to make a run pass; measure them and re-run.
+    divider_ratio: 6.0
+    adc_reference_voltage: 5.0
+    cell_count: 3
+    safe_threshold_v: 10.5        # SYS-PLT-2: 3.5 V/cell x 3S
+    critical_voltage_v: 9.9       # 3.3 V/cell x 3S
+    ut_bat_02_high_voltage_v: 10.70
+    ut_bat_02_low_voltage_v: 10.30
+  # Operator ground-truth labels typed into ground_truth_marker_node ("mark <label>").
+  # `axis` is 0=X, 1=Y, 2=Z of the board's own frame; `sign` follows the right-hand rule
+  # about the marked positive axis on the SEN0253.
+  ut_imu_01_reference_label: flat
+  ut_imu_01_rotation_sequence:
+    - {label: x_plus_90,  axis: 0, sign: 1}
+    - {label: x_minus_90, axis: 0, sign: -1}
+    - {label: y_plus_90,  axis: 1, sign: 1}
+    - {label: y_minus_90, axis: 1, sign: -1}
+    - {label: z_plus_90,  axis: 2, sign: 1}
+  ut_imu_02_reference_label: flat
+  ut_imu_02_return_label: flat_end
+  ut_imu_02_rotation_sequence:
+    - {label: yaw_plus_90,  axis: 2, sign: 1}
+    - {label: yaw_minus_90, axis: 2, sign: -1}
+  thresholds:
+    required:
+      # -- UT-IMU-01 (test plan section 14.8 required gates) --
+      ut_imu_01_min_finite_fraction: 0.999
+      ut_imu_01_quat_norm_min: 0.98
+      ut_imu_01_quat_norm_max: 1.02
+      ut_imu_01_min_quat_norm_fraction: 0.99
+      ut_imu_01_min_imu_rate_hz: 45.0
+      ut_imu_01_max_imu_gap_s: 0.10
+      ut_imu_01_max_parse_error_fraction: 0.001
+      ut_imu_01_max_sequence_discontinuity_fraction: 0.001
+      ut_imu_01_pressure_min_pa: 30000.0
+      ut_imu_01_pressure_max_pa: 110000.0
+      # -- UT-IMU-02 (test plan section 15.7) --
+      ut_imu_02_min_finite_fraction: 0.999
+      ut_imu_02_quat_norm_min: 0.98
+      ut_imu_02_quat_norm_max: 1.02
+      ut_imu_02_min_quat_norm_fraction: 0.99
+      ut_imu_02_min_imu_rate_hz: 45.0
+      ut_imu_02_max_imu_gap_s: 0.10
+      ut_imu_02_max_parse_error_fraction: 0.001
+      ut_imu_02_max_sequence_discontinuity_fraction: 0.001
+      # -- UT-BAT-01 (test plan section 16.8) --
+      ut_bat_01_min_battery_rate_hz: 4.0
+      ut_bat_01_max_battery_gap_s: 0.5
+      ut_bat_01_max_parse_error_fraction: 0.001
+      ut_bat_01_max_divider_ratio_relative_error: 0.02
+      ut_bat_01_max_threshold_region_error_v: 0.20
+    provisional:
+      # Engineering gates. Every value here is a bench judgement, not a system requirement,
+      # and BenchConfig.provisional() logs each one wherever it gates a result.
+      rotation_segment_settle_fraction: 0.4
+      stationary_fallback_sec: 25.0
+      ut_imu_01_stationary_accel_min_mps2: 8.5
+      ut_imu_01_stationary_accel_max_mps2: 11.2
+      ut_imu_01_max_stationary_gyro_rad_s: 0.10
+      ut_imu_01_min_rotation_angle_deg: 45.0
+      ut_imu_01_axis_dominance_ratio: 2.0
+      ut_imu_01_temperature_min_c: 5.0
+      ut_imu_01_temperature_max_c: 45.0
+      ut_imu_02_min_rotation_angle_deg: 45.0
+      ut_imu_02_axis_dominance_ratio: 2.0
+      ut_imu_02_min_ekf_rate_hz: 27.0
+      ut_imu_02_min_yaw_delta_deg: 20.0
+      ut_imu_02_max_yaw_return_error_deg: 15.0
+      ut_imu_02_max_tf_error_messages: 10
+      ut_bat_01_min_calibration_points: 5
+      ut_bat_01_adc_monotonicity_tolerance_counts: 2.0
+      ut_bat_01_max_abs_error_v: 0.20
+      ut_bat_01_max_rmse_v: 0.15
+      ut_bat_01_threshold_window_v: 0.30
+      ut_bat_01_min_r_squared: 0.999
+      ut_bat_02_max_status_gap_s: 2.0
+      ut_bat_02_max_propagation_latency_s: 2.0
+
 diagnostics:
   status_topic: /bench/status
   publish_status_hz: 1.0

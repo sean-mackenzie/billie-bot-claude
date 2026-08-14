@@ -1,4 +1,4 @@
-"""Import + generate_launch_description() smoke test for all 7 bench launch files.
+"""Import + generate_launch_description() smoke test for all 12 bench launch files.
 
 Proves each one constructs without error (import mistakes, argument-wiring bugs) without
 spawning any process, executing any Node, or touching hardware -- LaunchDescription
@@ -22,6 +22,18 @@ LAUNCH_FILES = [
     'noir_unit_bench.launch.py',
     'audio_capture_bench.launch.py',
     'audio_classifier_bench.launch.py',
+    'sensor_nano_imu_bench.launch.py',
+    'sensor_nano_imu_ekf_bench.launch.py',
+    'sensor_nano_battery_bench.launch.py',
+    'sensor_nano_battery_safe_bench.launch.py',
+    'sensor_nano_battery_threshold_bench.launch.py',
+]
+
+SENSOR_NANO_LAUNCH_FILES = [
+    'sensor_nano_imu_bench.launch.py',
+    'sensor_nano_imu_ekf_bench.launch.py',
+    'sensor_nano_battery_bench.launch.py',
+    'sensor_nano_battery_safe_bench.launch.py',
 ]
 
 
@@ -75,3 +87,57 @@ def test_preview_argument_is_declared_and_defaults_on(filename):
     declared = {a.name: a for a in ld.entities if isinstance(a, DeclareLaunchArgument)}
     assert 'start_visualization_previews' in declared
     assert declared['start_visualization_previews'].default_value[0].text == 'true'
+
+
+def _declared_arguments(filename) -> dict:
+    ld = _load_launch_module(filename).generate_launch_description()
+    return {a.name: a for a in ld.entities if isinstance(a, DeclareLaunchArgument)}
+
+
+@pytest.mark.parametrize('filename', SENSOR_NANO_LAUNCH_FILES)
+def test_sensor_nano_launch_files_declare_the_serial_arguments(filename):
+    # run_sensor_test forwards sensor_port/baudrate only to launch files that declare them;
+    # a missing declaration here would make the orchestrated path fail at include time.
+    declared = _declared_arguments(filename)
+    for name in ('sensor_port', 'baudrate', 'battery_divider_ratio',
+                  'adc_reference_voltage', 'orientation_frame_convention'):
+        assert name in declared, f'{filename} does not declare {name}'
+
+
+@pytest.mark.parametrize('filename', SENSOR_NANO_LAUNCH_FILES)
+def test_sensor_nano_serial_arguments_default_to_empty_so_the_config_file_wins(filename):
+    # Empty defaults are what keep config/sensor_bench.yaml the single source of truth for
+    # the divider ratio and ADC reference; a non-empty default here would silently shadow it.
+    declared = _declared_arguments(filename)
+    for name in ('battery_divider_ratio', 'adc_reference_voltage',
+                  'orientation_frame_convention'):
+        assert declared[name].default_value[0].text == ''
+
+
+@pytest.mark.parametrize('filename', LAUNCH_FILES)
+def test_every_launch_file_declares_the_common_bench_arguments(filename):
+    declared = _declared_arguments(filename)
+    for name in ('results_dir', 'duration_sec', 'record_bag', 'start_foxglove',
+                  'config_file'):
+        assert name in declared, f'{filename} does not declare {name}'
+
+
+def test_ut_bat_01_defaults_to_operator_paced_with_no_shutdown_timer():
+    declared = _declared_arguments('sensor_nano_battery_bench.launch.py')
+    assert declared['duration_sec'].default_value[0].text == '0'
+
+
+@pytest.mark.parametrize('filename,expected', [
+    ('sensor_nano_imu_bench.launch.py', '180'),
+    ('sensor_nano_imu_ekf_bench.launch.py', '120'),
+    ('sensor_nano_battery_safe_bench.launch.py', '90'),
+])
+def test_sensor_nano_durations_match_the_approved_test_plan(filename, expected):
+    assert _declared_arguments(filename)['duration_sec'].default_value[0].text == expected
+
+
+def test_ut_bat_02b_launch_needs_no_serial_port():
+    # UT-BAT-02B is software-only; declaring a sensor_port would imply hardware it does not
+    # use and would let an operator think a Sensor Nano must be connected.
+    declared = _declared_arguments('sensor_nano_battery_threshold_bench.launch.py')
+    assert 'sensor_port' not in declared

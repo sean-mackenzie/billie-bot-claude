@@ -24,9 +24,23 @@ or modifies the other.
 | MLX90640 | Raspberry Pi 5 | I²C bus 1, address `0x33` |
 | Pi Camera 3 NoIR | Raspberry Pi 5 | CSI-2 |
 | reSpeaker XVF3800 | Raspberry Pi 5 | USB |
+| Sensor Nano — DFRobot SEN0253 (BNO055 `0x28` + BMP280 `0x76`) and the battery-sense divider | Jetson Orin Nano | USB serial to an Arduino Nano V3 @ 115200 baud; SEN0253 on the Nano's own I²C (A4/A5), divider on A0 |
 
-Run only one sensor's tests at a time. Chassis, lidar, Nav2, mission, and multi-machine
-DDS are never required.
+Run only one sensor's tests at a time. Chassis, lidar, Nav2, and multi-machine DDS are never
+required.
+
+Two notes specific to the Sensor Nano suite:
+
+> **The Motor Nano stays disconnected for the whole Sensor Nano campaign.** Do not launch
+> `billiebot_base/base_bridge`: it still publishes its own `/battery_state` from the *Motor*
+> Nano's A0 (BLK-02), and two publishers on that topic makes UT-BAT-01/02 meaningless. Two
+> CH340 Nanos may also not expose distinct `/dev/serial/by-id` names (BLK-09) — prefer a
+> `/dev/serial/by-path/...` entry, and connect only the Sensor Nano.
+
+> **UT-BAT-02 and UT-BAT-02B are the one place this package launches mission software.** They
+> deliberately drive the *real* `billiebot_mission` `mission_controller` with the production
+> `mission.yaml`, because the shipping SAFE logic is what is under test. Nav2 is still not
+> required — the controller constructs its action client without waiting for a server.
 
 ## Prerequisites
 
@@ -64,7 +78,24 @@ ros2 run billiebot_sensor_tests run_sensor_test --test-id UT-OAK-01 \
 ```
 
 `--test-id` is any of: `UT-OAK-01`, `UT-OAK-02`, `DT-OAK-01`, `UT-THM-01`, `UT-THM-02`,
-`DT-THM-01`, `UT-NIR-01`, `UT-NIR-02`, `UT-AUD-01`, `DT-AUD-01`, `DT-AUD-02`.
+`DT-THM-01`, `UT-NIR-01`, `UT-NIR-02`, `UT-AUD-01`, `DT-AUD-01`, `DT-AUD-02`, `UT-IMU-01`,
+`UT-IMU-02`, `UT-BAT-01`, `UT-BAT-02`, `UT-BAT-02B`.
+
+The Sensor Nano tests additionally take `--sensor-port` (and optionally `--baudrate`), which
+are forwarded to the launch file only when set:
+
+```bash
+ros2 run billiebot_sensor_tests run_sensor_test --test-id UT-IMU-01 \
+  --results-dir ~/billiebot_test_results/UT-IMU-01_$(date -u +%Y%m%dT%H%M%SZ) \
+  --sensor-port "$SENSOR_NANO_PORT"
+```
+
+`UT-BAT-01` is **operator-paced**: its default `duration_sec` is `0`, so the launch streams
+until you press Ctrl-C and scoring runs immediately afterwards. Record each PSU setpoint from
+a second terminal while it runs (see the per-test table below).
+
+`UT-BAT-02B` needs **no hardware at all** — no Sensor Nano, no divider, no PSU — so it can be
+run anywhere the workspace builds.
 
 Equivalent, run in two steps (useful when you want to inspect the bag or copy it to
 another machine before scoring):
@@ -94,6 +125,40 @@ from the files written to `results_dir`, never from a launch/process return code
 | UT-AUD-01 | `audio_capture_bench.launch.py capture_label:=ambient\|speech\|impulse` (run 3×) | `analyze_audio` |
 | DT-AUD-01 | `audio_classifier_bench.launch.py` | `score_audio_classifier --profile classification` |
 | DT-AUD-02 | `audio_classifier_bench.launch.py` (separate session, own `--results-dir`) | `score_audio_classifier --profile doa` |
+| UT-IMU-01 | `sensor_nano_imu_bench.launch.py sensor_port:=$SENSOR_NANO_PORT` | `analyze_sensor_nano_imu --profile acquisition` |
+| UT-IMU-02 | `sensor_nano_imu_ekf_bench.launch.py sensor_port:=$SENSOR_NANO_PORT` | `analyze_sensor_nano_imu --profile ekf` |
+| UT-BAT-01 | `sensor_nano_battery_bench.launch.py sensor_port:=$SENSOR_NANO_PORT` (operator-paced, `duration_sec:=0`; run `record_battery_point` once per PSU setpoint from a second terminal) | `analyze_sensor_nano_battery` |
+| UT-BAT-02 | `sensor_nano_battery_safe_bench.launch.py sensor_port:=$SENSOR_NANO_PORT` | `score_battery_safe --profile physical` |
+| UT-BAT-02B | `sensor_nano_battery_threshold_bench.launch.py` (no hardware) | `score_battery_safe --profile threshold` |
+
+### Sensor Nano ground-truth marking
+
+UT-IMU-01 and UT-IMU-02 start `ground_truth_marker_node`. Type `mark <label>` into the launch
+terminal at each hold; the labels the analyzers expect are configured under
+`sensor_nano.ut_imu_01_rotation_sequence` / `ut_imu_02_rotation_sequence` in
+`config/sensor_bench.yaml` (`flat`, `x_plus_90`, `x_minus_90`, `y_plus_90`, `y_minus_90`,
+`z_plus_90`; and `flat`, `yaw_plus_90`, `yaw_minus_90`, `flat_end`).
+
+**Without those marks the commanded-rotation criterion fails rather than being skipped** —
+"clear correct-axis response with expected sign" is a required gate, and a run carrying no
+evidence for it has not demonstrated it.
+
+UT-BAT-01 ground truth is entered per setpoint instead:
+
+```bash
+ros2 run billiebot_sensor_tests record_battery_point \
+  --results-dir "$RESULTS" \
+  --setpoint-v 10.50 --dmm-battery-v 10.497 --dmm-a0-v 1.749
+```
+
+Each call appends one row to `exports/battery_points.csv`, pairing your DMM readings with the
+live `/battery_state` and `/bench/battery/adc` values sampled over the same few seconds.
+
+### Sensor Nano firmware
+
+The Arduino sketch, its pinned library versions, and the `arduino-cli` build/flash commands
+live in [`firmware/sensor_nano/README.md`](firmware/sensor_nano/README.md). Flash the Sensor
+Nano before running any UT-IMU/UT-BAT test.
 
 Ground-truth entry (distances, orientations, conditions) is stdin-driven during the
 launch: type e.g. `mark dog_present distance=1.5m orientation=front condition=normal_light`
@@ -273,11 +338,23 @@ Every launch file (`launch/*.launch.py`) and every hardware-touching node
 invoke) requires real sensor hardware. **`colcon test --packages-select
 billiebot_sensor_tests` requires no hardware at all** — it exercises only pure metric/
 scoring functions (`*/metrics.py`, `oakd/detection_scoring.py`, `thermal/blob_scoring.py`,
-`audio/classifier_scoring.py`) against synthetic fixtures in `test/fixtures/`, and
-construct-checks every launch file's `generate_launch_description()` without executing any
-node. Each `analyze_*`/`score_*` CLI also has a `--self-test` flag that exercises its core
-metric against inline synthetic data (no bag, no hardware) — useful as a post-install
-smoke check.
+`audio/classifier_scoring.py`, `sensor_nano/protocol.py`, `sensor_nano/imu_metrics.py`,
+`sensor_nano/battery_metrics.py`, `sensor_nano/safety_metrics.py`) against synthetic fixtures
+in `test/fixtures/`, and construct-checks every launch file's
+`generate_launch_description()` without executing any node. Each `analyze_*`/`score_*` CLI
+also has a `--self-test` flag that exercises its core metric against inline synthetic data
+(no bag, no hardware) — useful as a post-install smoke check.
+
+`UT-BAT-02B` is the one **bench test** that needs no hardware: it publishes synthetic
+`BatteryState` at the exact 10.5 V boundary against the real production mission controller.
+It is not part of `colcon test` (it is a bench run producing a full result directory), but it
+can be executed on any machine where the workspace builds.
+
+> **UT-BAT-02B is expected to FAIL today, and that failure is the deliverable.**
+> `mission_controller.py:147` compares with a strict `<` while SYS-PLT-2 requires `<=`, so
+> exactly 10.5000 V does not trigger SAFE. The 10.5001 V and 10.4999 V cases pass. This is
+> BLK-05, a production requirement discrepancy — not a Sensor Nano hardware fault, and not a
+> defect in the test. Do not "fix" it by changing the expectation.
 
 ## How to add a new bench test
 

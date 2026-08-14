@@ -1,0 +1,64 @@
+# Bench-only robot_localization configuration for UT-IMU-02.
+#
+# This file exists so the IMU path can be exercised WITHOUT editing the production
+# billiebot_navigation/config/ekf.yaml, whose imu0 block is still commented out (BLK-04).
+# It mirrors the intent of that commented block exactly -- see ekf.yaml lines 26-36 -- with
+# the wheel-odometry input removed, because the Motor Nano, base_bridge and the encoders are
+# all deliberately absent from this bench campaign.
+#
+# After UT-IMU-02 passes, the production ekf.yaml should adopt the imu0 block ALONGSIDE its
+# existing odom0 input. Do not copy this file over the production one: dropping odom0 on the
+# real robot would remove wheel odometry from the filter.
+#
+# What is actually fused here: with two_d_mode: true, robot_localization forces z, roll,
+# pitch, vz, vroll, vpitch and az to zero regardless of the config vector below. The
+# effective IMU contribution is therefore YAW, YAW RATE, and the X/Y accelerations. The full
+# 15-element vector is kept in the shape the production block uses so the two stay
+# comparable line for line.
+#
+# imu0_remove_gravitational_acceleration: true REQUIRES that /imu/data.linear_acceleration is
+# specific force INCLUDING gravity. The Sensor Nano firmware sends the BNO055
+# VECTOR_ACCELEROMETER output for exactly this reason; if it ever sent VECTOR_LINEARACCEL
+# instead, gravity would be subtracted twice and this filter would be quietly wrong.
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 30.0
+    sensor_timeout: 0.1
+    two_d_mode: true
+    publish_tf: true
+
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+    map_frame: map
+
+    # IMU input -- the block production ekf.yaml still has commented out.
+    imu0: /imu/data
+    imu0_config: [false, false, false,   # x, y, z
+                  true,  true,  true,    # roll, pitch, yaw
+                  false, false, false,   # vx, vy, vz
+                  true,  true,  true,    # vroll, vpitch, vyaw
+                  true,  true,  true]    # ax, ay, az
+    imu0_differential: false
+    imu0_relative: false
+    imu0_remove_gravitational_acceleration: true
+
+    # Copied verbatim from the production ekf.yaml so bench and production filters differ
+    # only in their inputs, never in their tuning.
+    process_noise_covariance:
+      [0.05,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.05,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.06,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.03,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.03,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.06,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.025, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.025, 0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.04,  0.0,   0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.02,  0.0,   0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,   0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.01,  0.0,
+       0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.0,   0.015]
