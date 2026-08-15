@@ -497,7 +497,7 @@ The parser shall reject malformed or CRC-failed records and count failures.
 >
 > 1. **A magnetometer record was added**, since real measurements are available and BLK-13
 >    makes them worth capturing:
->    `M,<seq>,<t_us>,<mx>,<my>,<mz>*<crc>` at 10 Hz. It carries **microtelsa**, not tesla —
+>    `M,<seq>,<t_us>,<mx>,<my>,<mz>*<crc>` at 10 Hz. It carries **microtesla**, not tesla —
 >    tesla would need eight decimals of fixed-point text to preserve the chip's 0.0625 µT
 >    quantum. The bridge scales to tesla for `sensor_msgs/MagneticField`. Set
 >    `ENABLE_MAGNETOMETER 0` in the sketch to drop the record and reclaim its bandwidth.
@@ -562,7 +562,8 @@ There are no actuators on the Sensor Nano, so it does not need the motor watchdo
 > |---|---|
 > | never hang on I²C | `Wire.setWireTimeout(25000, true)` (AVR core ≥1.8.x) bounds every transaction and resets TWI on timeout |
 > | count I²C faults | `Wire.getWireTimeoutFlag()` polled after each transaction |
-> | detect a failed BNO055 read | **quaternion norm gate, 0.90–1.10.** `Adafruit_BNO055::getQuat()` discards the `bool` from its `private` `readLen()`, so a failed I²C read surfaces as an all-zero quaternion. Norm-gating drops and counts the sample instead of transmitting plausible-looking zeros; a valid fusion quaternion is always unit norm, so this is a sound check, and `readLen()` being private means it is also the only one available. |
+> | detect a failed BNO055 read | **transaction-checked register reads.** `Adafruit_BNO055::getQuat()`, `getVector()` and `read8()` all zero their buffers and then discard the `bool` from the `private` `readLen()`, so a failed I²C read surfaces as an all-zero quaternion or vector — and, for `getCalibration()`, as fabricated calibration levels decoded from the register address left in the buffer. No value check can separate those from real data: a stationary gyro is legitimately near zero and a failed accelerometer read is exactly zero. Since `readLen()` is private, the sketch issues the register reads itself (`bnoRead()`, mirroring `Adafruit_I2CDevice::write_then_read()` and verifying the received byte count). **If the quaternion, gyro, accelerometer or calibration transaction fails, the entire `I` record is dropped and counted** — see the implementation note below. |
+> | detect zeroed BNO055 data that read successfully | **quaternion norm gate, 0.90–1.10**, kept behind the transaction check as defence in depth: it catches a chip that reset into `CONFIG` mode and *successfully* returns real zeros, which no transaction check can see. |
 > | detect a failed BMP280 read | plausibility gate, 30–110 kPa and −40–85 °C (`readPressure()` returns `NAN` before `begin()` and `0` on a calibration divide-by-zero) |
 > | bounded reinitialization | re-`begin()` after 25 consecutive failures, at most once per 5 s, at most 20 times total, per peripheral independently |
 > | micros() rollover | all scheduling uses unsigned `micros()` subtraction, which is correct across the ~71.6-minute wrap with no special-casing; the Jetson parser unwraps it into a monotonic uptime |
@@ -573,6 +574,19 @@ There are no actuators on the Sensor Nano, so it does not need the motor watchdo
 > **ADC averaging:** one `analogRead(A0)` per loop iteration is accumulated and the mean is
 > emitted every 200 ms. Averaging this way costs no scheduling jitter at all — a burst of
 > conversions inside the battery tick would have delayed the 50 Hz IMU path.
+>
+> **Operator-facing consequence of the IMU read check.** An `I` record is emitted only when
+> *all four* BNO055 transactions in that sample succeed — quaternion, gyro, accelerometer and
+> calibration status. Any failure drops the whole sample, so a `0,0,0` gyro or accelerometer
+> vector can no longer reach `/imu/data`. Because the drop happens before a sequence number is
+> consumed, an intermittent I²C fault appears as a **small IMU rate deficit plus a rising
+> `imu_read_errors`**, and *not* as a sequence discontinuity — `imu_read_errors` is the
+> counter to read when the rate looks slightly low. It counts one per dropped sample (never
+> one per register read), and it also drives the same bounded re-`begin()` recovery as before,
+> so repeated quaternion, gyro, accelerometer or calibration failures all contribute to it.
+> `analyze_imu.py` records the S-record counters under `firmware_error_counters` for every IMU
+> profile; they are **informational only** and gate nothing — the required criteria in §14 are
+> unchanged. Battery and BMP280 acquisition remain independent of IMU health.
 
 ---
 
@@ -874,7 +888,7 @@ The user normally needs membership in `dialout`.
 > Measured footprint on an ATmega328P:
 >
 > ```text
-> Sketch uses 17370 bytes (56%) of program storage space. Maximum is 30720 bytes.
+> Sketch uses 17426 bytes (56%) of program storage space. Maximum is 30720 bytes.
 > Global variables use 760 bytes (37%) of dynamic memory, leaving 1288 bytes for
 > local variables. Maximum is 2048 bytes.
 > ```
@@ -2548,8 +2562,8 @@ The approval gate has been passed and the software is implemented.
 | Activity | Result |
 |---|---|
 | `colcon build --packages-select billiebot_sensor_tests` | clean |
-| `colcon test --packages-select billiebot_sensor_tests` | **445 tests, 0 errors, 0 failures, 0 skipped** |
-| Firmware compile, `arduino-cli --fqbn arduino:avr:nano:cpu=atmega328` | 17370 B flash (56 %), 760 B SRAM (37 %); no warnings at `--warnings all` |
+| `colcon test --packages-select billiebot_sensor_tests` | **447 tests, 0 errors, 0 failures, 0 skipped** |
+| Firmware compile, `arduino-cli --fqbn arduino:avr:nano:cpu=atmega328` and `cpu=atmega328old` | 17426 B flash (56 %), 760 B SRAM (37 %); no warnings at `--warnings all` |
 | All six new console scripts resolve under `ros2 run` | yes |
 | All five new launch files load and `--show-args` | yes |
 | All 16 registry IDs resolve (11 pre-existing + 5 new) | yes |

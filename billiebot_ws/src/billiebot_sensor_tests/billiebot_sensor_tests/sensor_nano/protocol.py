@@ -22,9 +22,16 @@ Record types:
 
 Units are SI at the wire, converted in firmware: quaternion dimensionless, gyro rad/s,
 acceleration m/s^2 *including gravity* (BNO055 VECTOR_ACCELEROMETER, never VECTOR_LINEARACCEL
--- see the firmware README), magnetometer tesla, pressure Pa, temperature degrees C. The
-battery field is a raw averaged 10-bit ADC count and is deliberately NOT volts: the divider
-ratio and ADC reference live on the Jetson (sensor_nano_bridge), never in firmware.
+-- see the firmware README), pressure Pa, temperature degrees C.
+
+Two fields are deliberately not in their ROS units:
+
+    M records carry MICROTESLA, not tesla. Tesla would need eight decimals of fixed-point
+    text to preserve the chip's 0.0625 uT quantum, so sensor_nano_bridge scales microtesla
+    to tesla (_MICROTESLA_TO_TESLA) before publishing sensor_msgs/MagneticField on /imu/mag.
+
+    The battery field is a raw averaged 10-bit ADC count, not volts: the divider ratio and
+    ADC reference live on the Jetson (sensor_nano_bridge), never in firmware.
 
 Parsing is strict by design. A record with the wrong field count, an unparseable numeric
 field, a non-finite float, or a bad CRC raises -- it is never coerced to zeros, because a
@@ -167,7 +174,13 @@ class MagnetometerRecord(Record):
 
     @property
     def magnetic_field(self) -> tuple:
-        """(x, y, z) in tesla."""
+        """(x, y, z) in MICROTESLA, exactly as the firmware sent them.
+
+        Not tesla: sensor_nano_bridge applies the 1e-6 scale on the way to
+        sensor_msgs/MagneticField. Do not "fix" that conversion to match a caller that
+        assumed these were already tesla -- the wire unit is microtesla by design (see the
+        module docstring).
+        """
         return (self.mx, self.my, self.mz)
 
 
