@@ -319,6 +319,7 @@ def _common_imu_checks(bag, cfg, result_dir, metrics, pass_fail, thresholds_used
                                   '/bench/sensor_nano/diagnostics')
     )
     metrics['parser_stats'] = parser
+    metrics['firmware_error_counters'] = _firmware_error_counters(parser)
 
     max_parse_error = cfg.required(
         f'sensor_nano.thresholds.required.{prefix}_max_parse_error_fraction'
@@ -361,6 +362,37 @@ def _as_int(value):
         return int(float(value))
     except (TypeError, ValueError):
         return None
+
+
+#: Firmware health counters carried by the Nano's S record, recorded for every IMU profile.
+#:
+#: Recorded, never gated. The required criteria (rate, sequence continuity, CRC/parser error
+#: fraction, stationary acceleration, gyro plausibility) stay authoritative -- a single
+#: transient recovery is not by itself a failure and no threshold here would be anything but
+#: invented. They are surfaced by name because the firmware drops an entire IMU sample when
+#: any BNO055 transaction fails, and a dropped sample consumes no sequence number: an
+#: intermittent I2C fault shows up as a small rate deficit plus `imu_read_errors`, and
+#: nowhere else.
+_FIRMWARE_ERROR_COUNTERS = (
+    'imu_read_errors', 'i2c_errors', 'bmp_errors', 'reinits', 'imu_records_dropped',
+)
+
+
+def _firmware_error_counters(parser: dict) -> dict:
+    """Pull the S-record counters out of whichever parser-stats shape we were handed.
+
+    The exports side-car nests them under `last_status`; the bagged diagnostics fallback
+    flattens them into top-level keys. Same two-source pattern as the bno_ok lookup below.
+    """
+    nested = parser.get('last_status')
+    nested = nested if isinstance(nested, dict) else {}
+    counters = {}
+    for key in _FIRMWARE_ERROR_COUNTERS:
+        value = _as_int(parser.get(key))
+        if value is None:
+            value = _as_int(nested.get(key))
+        counters[key] = value
+    return counters
 
 
 def _run_acquisition_profile(bag, cfg, result_dir) -> dict:

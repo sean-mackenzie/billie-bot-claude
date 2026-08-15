@@ -96,6 +96,30 @@ def test_magnetometer_record_parses_three_axes():
     assert record.magnetic_field == pytest.approx((20.5, -5.25, 40.125))
 
 
+def test_magnetometer_wire_values_are_microtesla_not_tesla():
+    # Earth's field is 25-65 uT, i.e. 2.5e-5 to 6.5e-5 T. The wire carries the microtesla
+    # figure, so a realistic record parses to tens, not to tens of microunits. Reading these
+    # as tesla would put the field five orders of magnitude out.
+    record = parse_line(magnetometer_line(4, 400, (20.5, -5.25, 40.125)))
+    magnitude = sum(v * v for v in record.magnetic_field) ** 0.5
+    assert 25.0 <= magnitude <= 65.0
+
+
+def test_bridge_converts_magnetometer_microtesla_to_tesla():
+    # Guards the conversion against being "fixed" to match documentation that used to claim
+    # the wire was already tesla. sensor_msgs/MagneticField is specified in tesla; the
+    # firmware sends microtesla because tesla would need eight decimals of fixed-point text
+    # to preserve the chip's 0.0625 uT quantum.
+    pytest.importorskip('rclpy')
+    from billiebot_sensor_tests.sensor_nano import sensor_nano_bridge
+
+    assert sensor_nano_bridge._MICROTESLA_TO_TESLA == 1e-6
+
+    record = parse_line(magnetometer_line(4, 400, (20.5, -5.25, 40.125)))
+    tesla = tuple(v * sensor_nano_bridge._MICROTESLA_TO_TESLA for v in record.magnetic_field)
+    assert tesla == pytest.approx((2.05e-5, -5.25e-6, 4.0125e-5))
+
+
 def test_status_record_parses_health_counters():
     line = status_line(5, 500, bno_ok=1, bmp_ok=0, fusion_mode=12, i2c_errors=7,
                        imu_read_errors=2, bmp_errors=9, reinits=1, imu_records_dropped=4)

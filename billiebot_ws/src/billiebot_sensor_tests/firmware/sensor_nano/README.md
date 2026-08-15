@@ -84,12 +84,18 @@ arduino-cli compile --fqbn arduino:avr:nano:cpu=atmega328 .
 Measured on the versions above:
 
 ```text
-Sketch uses 17370 bytes (56%) of program storage space. Maximum is 30720 bytes.
+Sketch uses 17426 bytes (56%) of program storage space. Maximum is 30720 bytes.
 Global variables use 760 bytes (37%) of dynamic memory, leaving 1288 bytes for
 local variables. Maximum is 2048 bytes.
 ```
 
 Comfortable headroom on both. Compiles clean with `--warnings all`.
+
+The compile is also the sketch's own regression test. A block of `static_assert`s pins the
+BNO055 register addresses to the datasheet map, the little-endian two's-complement decode to
+its full-scale and sign cases, and the accelerometer register to `ACC_DATA_X_LSB` rather
+than the linear-acceleration registers. They cost no flash and no SRAM, and a byte-order,
+sign, register or gravity-source regression fails this compile instead of reaching the bench.
 
 ### Upload
 
@@ -182,15 +188,19 @@ conversion is an explicit, opt-in bridge parameter (`orientation_frame_conventio
 convention lives in configuration rather than buried in a sketch. The chip's fusion world
 frame is not yet verified on this hardware — see BLK-14.
 
-**Library unit conversions**, verified against the installed `Adafruit_BNO055.cpp`
-`getVector()` rather than assumed:
+**Unit conversions.** The IMU path reads the BNO055 data registers directly (see *Fault
+behaviour* for why); the scales are transcribed from the installed `Adafruit_BNO055.cpp`
+`getQuat()`/`getVector()` bodies and datasheet §3.6.4 rather than assumed:
 
-| Call | Library returns | Firmware sends |
+| Source | Raw | Firmware sends |
 |---|---|---|
-| `getQuat()` | scale 1/2¹⁴, dimensionless | as-is |
-| `getVector(VECTOR_GYROSCOPE)` | **deg/s** (1 dps = 16 LSB) | × `DEG_TO_RAD` → rad/s |
-| `getVector(VECTOR_ACCELEROMETER)` | m/s² (1 m/s² = 100 LSB) | as-is |
+| `QUA_DATA_W_LSB` (`0x20`, 8 B) | scale 1/2¹⁴, dimensionless | as-is |
+| `GYR_DATA_X_LSB` (`0x14`, 6 B) | **deg/s** (1 dps = 16 LSB) | × `DEG_TO_RAD` → rad/s |
+| `ACC_DATA_X_LSB` (`0x08`, 6 B) | m/s² (1 m/s² = 100 LSB) | as-is |
 | `getVector(VECTOR_MAGNETOMETER)` | microtesla (1 µT = 16 LSB) | as-is (bridge → tesla) |
+
+Every one of those registers is little-endian two's-complement 16-bit; `bnoInt16()` does the
+decode and `static_assert` pins its byte order and sign handling at compile time.
 
 Those divisors are only correct because the library's `begin()` leaves `BNO055_UNIT_SEL` at
 its power-on default — the write is commented out upstream. **If a future library version
@@ -212,18 +222,41 @@ can never silently misrepresent a captured run.
 |---|---|
 | I²C hang | `Wire.setWireTimeout(25000, true)` bounds every transaction and resets TWI on timeout |
 | I²C fault counting | `Wire.getWireTimeoutFlag()` polled after each transaction → `i2c_errors` |
-| Failed BNO055 read | `getQuat()` swallows its own error and returns zeros, so the sample is **norm-gated** (0.90–1.10) and dropped + counted rather than transmitted |
+| Failed BNO055 read | every read on the IMU path is **transaction-checked** (`bnoRead()`); if the quaternion, gyro, accelerometer or calibration read fails, the **whole `I` record is dropped** and counted rather than transmitted |
+| Zeroed BNO055 data that *did* read successfully | quaternion **norm gate** (0.90–1.10), as defence in depth behind the transaction check |
 | Failed BMP280 read | plausibility-gated (30–110 kPa, −40–85 °C); dropped + counted |
 | BMP280 dies | BNO055 and battery keep streaming |
 | BNO055 dies | battery keeps streaming |
 | Repeated failures | bounded re-`begin()` after 25 consecutive failures, ≥5 s apart, ≤20 attempts total |
 | Schedule overrun | detected by the catch-up guard, counted in `imu_records_dropped` |
 
-The norm gate exists because `Adafruit_BNO055::getQuat()` ignores the `bool` from its private
-`readLen()`. A failed I²C read therefore surfaces as an all-zero quaternion — plausible-looking
-data that would be far worse than a visible dropout. `readLen()` is `private`, so norm-gating
-is the available detection; it is also a genuinely sound one, since a valid fusion quaternion
-is always unit norm.
+### Why the IMU path bypasses the Adafruit convenience methods
+
+`Adafruit_BNO055::getQuat()` and `getVector()` zero their buffers, call the private
+`readLen()`, and **discard the `bool` it returns**. A NACKed or timed-out I²C read therefore
+surfaces as an all-zero quaternion or an all-zero vector — plausible-looking data, far worse
+than a visible dropout. `read8()`, which `getCalibration()` uses, has the same defect plus a
+worse consequence: it reuses one buffer for the register address and the reply, so a failed
+read of `CALIB_STAT` decodes `0x35` into a fabricated `cal_gyr=3, cal_acc=1, cal_mag=1`.
+
+No value-domain check can close that hole. A stationary gyro is legitimately near zero, and a
+failed accelerometer read is exactly zero. `readLen()` is `private`, so the only way to see
+the transaction result is to issue the register read in the sketch, which is what `bnoRead()`
+does — mirroring `Adafruit_I2CDevice::write_then_read()` (address write with no stop, read
+with one) and verifying the received byte count. The rule it enforces is:
+
+> **failed transaction → drop the complete IMU sample → count it → never publish plausible
+> zeros.**
+
+A failed read increments `imu_read_errors` and the consecutive-failure counter that drives
+recovery, clears `bno_ok`, and returns before a sequence number is consumed — so a dropped
+sample shows up as a small rate deficit and a rising `imu_read_errors`, never as a stream
+discontinuity or a zero vector. The quaternion norm gate is kept behind it because it catches
+what a transaction check cannot: a chip that reset into `CONFIG` mode and *successfully*
+returns real zeros.
+
+The magnetometer still uses `getVector()`; its `M` record is gated on `bno_ok`, which the
+50 Hz IMU path refreshes every 20 ms.
 
 A re-`begin()` blocks for roughly a second. That is acceptable only because the peripheral is
 already dead when it happens, and the cooldown is what stops the stall from repeating.

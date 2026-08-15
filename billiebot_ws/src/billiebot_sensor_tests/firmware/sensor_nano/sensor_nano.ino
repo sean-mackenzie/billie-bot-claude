@@ -34,12 +34,18 @@
   (`orientation_frame_convention`), so the convention is visible in configuration rather
   than buried in a sketch.
 
-  Library unit conversions applied here (verified against the installed library sources,
-  not assumed -- Adafruit_BNO055.cpp getVector()):
-      getQuat()                      scale 1/2^14, dimensionless   -> sent as-is
-      getVector(VECTOR_GYROSCOPE)    deg/s  (1 dps = 16 LSB)       -> * DEG_TO_RAD -> rad/s
-      getVector(VECTOR_ACCELEROMETER) m/s^2 (1 m/s^2 = 100 LSB)    -> sent as-is
-      getVector(VECTOR_MAGNETOMETER) microtesla (1 uT = 16 LSB)    -> sent as uT
+  Unit conversions applied here. The IMU path reads the BNO055 data registers directly --
+  see bnoRead() for why -- so the scale factors and byte order below are transcribed from the
+  installed Adafruit_BNO055.cpp getQuat()/getVector() bodies and datasheet section 3.6.4,
+  not assumed:
+      QUATERNION (reg 0x20, 8 B)      1/2^14 per LSB, dimensionless -> sent as-is
+      GYROSCOPE  (reg 0x14, 6 B)      1 dps = 16 LSB                -> * DEG_TO_RAD -> rad/s
+      ACCELEROMETER (reg 0x08, 6 B)   1 m/s^2 = 100 LSB             -> sent as m/s^2
+      getVector(VECTOR_MAGNETOMETER)  microtesla (1 uT = 16 LSB)    -> sent as uT
+  Those registers are all little-endian two's-complement 16-bit. bnoInt16() does the decode
+  and static_assert pins its byte order and sign handling at compile time, so an endianness
+  or sign regression fails the build rather than reaching the bench.
+
   The library's begin() leaves BNO055_UNIT_SEL at its power-on default (the write is
   commented out upstream), which is what makes those divisors correct. If a future library
   version starts writing UNIT_SEL, re-verify the gyro unit before trusting this firmware.
@@ -90,13 +96,19 @@
 #define I2C_TIMEOUT_US         25000UL
 #define I2C_CLOCK_HZ           100000UL
 
-/* A valid BNO055 fusion quaternion is always unit norm. Adafruit_BNO055::getQuat() swallows
-   the bool from its private readLen(), so a failed I2C read surfaces as an all-zero
-   quaternion rather than an error -- exactly the "plausible zero data" this project refuses
-   to publish. Norm-gating the sample is the available detection, and it is strictly better
-   than trusting the library's silent success. */
+/* A valid BNO055 fusion quaternion is always unit norm. Every BNO055 read on the IMU path is
+   now transaction-checked (bnoRead()), so this gate is no longer the only defence against
+   zeroed data -- it is defence in depth against the case a transaction check cannot see: a
+   chip that reset into CONFIG mode and *successfully* returns real zeros. */
 #define QUAT_NORM_MIN          0.90f
 #define QUAT_NORM_MAX          1.10f
+
+/* BNO055 fixed-point scale factors, datasheet section 3.6.4. Identical to the divisors in
+   the installed Adafruit_BNO055.cpp getVector()/getQuat(); the library's begin() leaves
+   UNIT_SEL at its power-on default, which is what makes them correct. */
+#define BNO055_QUAT_LSB            16384.0f   /* 2^14 per unit, dimensionless */
+#define BNO055_GYRO_LSB_PER_DPS       16.0f
+#define BNO055_ACCEL_LSB_PER_MPS2    100.0f
 
 /* Plausibility window for the BMP280. Outside this the sample is dropped and counted
    instead of being transmitted. Matches the test plan's 30-110 kPa acceptance band. */
@@ -271,52 +283,167 @@ static void pollI2cTimeout(void) {
 }
 
 /* ====================================================================================
+   Checked BNO055 register reads
+
+   Adafruit_BNO055::getQuat() and getVector() memset their buffers to zero, call the private
+   readLen(), and then DISCARD the bool it returns (Adafruit_BNO055.cpp 1.6.4, getVector() at
+   ~401 and getQuat() at ~466). A NACKed or timed-out I2C transaction is therefore
+   indistinguishable from a genuine all-zero reading. read8() -- the one getCalibration()
+   uses -- has the same defect and one worse consequence: it reuses a single buffer for the
+   register address and the reply, so a failed read of CALIB_STAT decodes 0x35 into a
+   fabricated cal_gyr=3/cal_acc=1/cal_mag=1.
+
+   A stationary gyro is legitimately near zero and a failed accelerometer read is exactly
+   zero, so no value-domain check can tell them apart. readLen() is private, so the only way
+   to see the transaction result is to issue the register read here.
+
+   Transaction semantics mirror Adafruit_I2CDevice::write_then_read(): the address write ends
+   with NO stop (repeated start -- write_then_read's `stop` argument defaults to false), the
+   read ends with one, and the received length is verified. On a NACK the AVR TWI ISR issues
+   its own stop, and Wire.setWireTimeout(..., true) resets the peripheral on timeout, so a
+   failed transaction can never leave the bus held despite the suppressed stop.
+   ==================================================================================== */
+
+static bool bnoRead(uint8_t reg, uint8_t *buffer, uint8_t length) {
+  Wire.beginTransmission(BNO055_I2C_ADDRESS);
+  if (Wire.write(reg) != 1) {
+    Wire.endTransmission(true);
+    pollI2cTimeout();
+    return false;
+  }
+  if (Wire.endTransmission(false) != 0) {
+    pollI2cTimeout();
+    return false;
+  }
+  if (Wire.requestFrom((uint8_t)BNO055_I2C_ADDRESS, length, (uint8_t)true) != length) {
+    pollI2cTimeout();
+    return false;
+  }
+  pollI2cTimeout();
+  for (uint8_t i = 0; i < length; i++) {
+    buffer[i] = (uint8_t)Wire.read();
+  }
+  return true;
+}
+
+/* Every BNO055 data register pair is little-endian two's-complement 16-bit. Written as a
+   single-return constexpr so the static_asserts below are evaluated by the compiler and cost
+   nothing at runtime. */
+static constexpr int16_t bnoInt16(uint8_t lsb, uint8_t msb) {
+  return (int16_t)((uint16_t)lsb | ((uint16_t)msb << 8));
+}
+
+/* Compile-time regression guard for the exact mistakes this decode invites. These run on
+   every arduino-cli compile and occupy no flash or SRAM. */
+static_assert(bnoInt16(0x00, 0x00) == 0, "bnoInt16: zero");
+static_assert(bnoInt16(0xE8, 0x03) == 1000, "bnoInt16: little-endian byte order");
+static_assert(bnoInt16(0xFF, 0xFF) == -1, "bnoInt16: two's-complement sign");
+static_assert(bnoInt16(0x00, 0x80) == -32768, "bnoInt16: full-scale negative");
+static_assert(bnoInt16(0xFF, 0x7F) == 32767, "bnoInt16: full-scale positive");
+
+/* Register addresses are taken from the library's own public enums rather than retyped, so
+   there is no hand-copied constant to get wrong. Naming them here is what lets the asserts
+   below guard the addresses this file actually reads, not just the library's enum values. */
+static constexpr uint8_t BNO055_REG_QUATERNION =
+    (uint8_t)Adafruit_BNO055::BNO055_QUATERNION_DATA_W_LSB_ADDR;
+static constexpr uint8_t BNO055_REG_GYRO = (uint8_t)Adafruit_BNO055::VECTOR_GYROSCOPE;
+static constexpr uint8_t BNO055_REG_ACCEL = (uint8_t)Adafruit_BNO055::VECTOR_ACCELEROMETER;
+static constexpr uint8_t BNO055_REG_CALIB_STAT =
+    (uint8_t)Adafruit_BNO055::BNO055_CALIB_STAT_ADDR;
+
+/* Addresses from the BNO055 page-0 register map. A library version that renumbers these, or
+   an edit that points one of them somewhere else, fails the build. */
+static_assert(BNO055_REG_QUATERNION == 0x20, "BNO055 QUA_DATA_W_LSB is 0x20");
+static_assert(BNO055_REG_GYRO == 0x14, "BNO055 GYR_DATA_X_LSB is 0x14");
+static_assert(BNO055_REG_CALIB_STAT == 0x35, "BNO055 CALIB_STAT is 0x35");
+
+/* The acceleration this firmware sends must be specific force INCLUDING gravity, because the
+   BillieBot robot_localization config sets imu0_remove_gravitational_acceleration. Reading
+   LIA_DATA_X_LSB (0x28, VECTOR_LINEARACCEL) instead would remove gravity twice, and the
+   symptom -- a stationary magnitude near zero -- only shows up on the bench. Retargeting
+   BNO055_REG_ACCEL at the linear-acceleration registers fails both of these. */
+static_assert(BNO055_REG_ACCEL == 0x08, "accelerometer must read ACC_DATA_X_LSB (0x08)");
+static_assert(BNO055_REG_ACCEL != (uint8_t)Adafruit_BNO055::VECTOR_LINEARACCEL,
+              "accelerometer source must include gravity, never VECTOR_LINEARACCEL");
+
+/* ====================================================================================
    Sampling
    ==================================================================================== */
 
-static void sampleImu(uint32_t t_us) {
-  imu::Quaternion quat = g_bno.getQuat();
-  pollI2cTimeout();
+/* One failed BNO055 transaction invalidates the whole IMU sample. Called at most once per
+   sampleImu() -- the caller returns immediately -- so a single bad sample costs exactly one
+   error and one consecutive-failure step, never one per register read. */
+static void noteBnoSampleFailure(void) {
+  if (g_imu_read_errors < 0xFFFF) {
+    g_imu_read_errors++;
+  }
+  if (g_bno_consecutive_failures < 0xFF) {
+    g_bno_consecutive_failures++;
+  }
+  g_bno_ok = 0;
+}
 
-  double norm = sqrt(quat.w() * quat.w() + quat.x() * quat.x() +
-                     quat.y() * quat.y() + quat.z() * quat.z());
+static void sampleImu(uint32_t t_us) {
+  /* Shared across the four reads; each value is decoded out before the buffer is reused. */
+  uint8_t raw[8];
+
+  if (!bnoRead(BNO055_REG_QUATERNION, raw, 8)) {
+    noteBnoSampleFailure();
+    return;  /* a failed transaction is a dropped sample, never a zeroed orientation */
+  }
+  float qw = bnoInt16(raw[0], raw[1]) / BNO055_QUAT_LSB;
+  float qx = bnoInt16(raw[2], raw[3]) / BNO055_QUAT_LSB;
+  float qy = bnoInt16(raw[4], raw[5]) / BNO055_QUAT_LSB;
+  float qz = bnoInt16(raw[6], raw[7]) / BNO055_QUAT_LSB;
+
+  float norm = sqrt(qw * qw + qx * qx + qy * qy + qz * qz);
   if (!(norm >= QUAT_NORM_MIN && norm <= QUAT_NORM_MAX)) {
     /* Also catches NaN, since every comparison against NaN is false. */
-    if (g_imu_read_errors < 0xFFFF) {
-      g_imu_read_errors++;
-    }
-    if (g_bno_consecutive_failures < 0xFF) {
-      g_bno_consecutive_failures++;
-    }
-    g_bno_ok = 0;
-    return;  /* emit nothing rather than a zeroed orientation */
+    noteBnoSampleFailure();
+    return;
   }
 
-  imu::Vector<3> gyro = g_bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
-  pollI2cTimeout();
-  imu::Vector<3> accel = g_bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
-  pollI2cTimeout();
+  if (!bnoRead(BNO055_REG_GYRO, raw, 6)) {
+    noteBnoSampleFailure();
+    return;  /* a stationary gyro is legitimately near zero -- zeros here must not ship */
+  }
+  /* 16 LSB per dps, then deg/s -> rad/s; see the unit table in the file header. */
+  float gx = bnoInt16(raw[0], raw[1]) / BNO055_GYRO_LSB_PER_DPS * DEG_TO_RAD;
+  float gy = bnoInt16(raw[2], raw[3]) / BNO055_GYRO_LSB_PER_DPS * DEG_TO_RAD;
+  float gz = bnoInt16(raw[4], raw[5]) / BNO055_GYRO_LSB_PER_DPS * DEG_TO_RAD;
 
-  uint8_t cal_sys = 0, cal_gyr = 0, cal_acc = 0, cal_mag = 0;
-  g_bno.getCalibration(&cal_sys, &cal_gyr, &cal_acc, &cal_mag);
-  pollI2cTimeout();
+  if (!bnoRead(BNO055_REG_ACCEL, raw, 6)) {
+    noteBnoSampleFailure();
+    return;
+  }
+  /* 100 LSB per m/s^2. Specific force, gravity included. */
+  float ax = bnoInt16(raw[0], raw[1]) / BNO055_ACCEL_LSB_PER_MPS2;
+  float ay = bnoInt16(raw[2], raw[3]) / BNO055_ACCEL_LSB_PER_MPS2;
+  float az = bnoInt16(raw[4], raw[5]) / BNO055_ACCEL_LSB_PER_MPS2;
+
+  if (!bnoRead(BNO055_REG_CALIB_STAT, raw, 1)) {
+    noteBnoSampleFailure();
+    return;  /* rather than the fabricated levels read8() would have decoded from 0x35 */
+  }
+  uint8_t cal_sys = (raw[0] >> 6) & 0x03;
+  uint8_t cal_gyr = (raw[0] >> 4) & 0x03;
+  uint8_t cal_acc = (raw[0] >> 2) & 0x03;
+  uint8_t cal_mag = raw[0] & 0x03;
 
   g_bno_consecutive_failures = 0;
   g_bno_ok = 1;
 
   uint8_t n = beginRecord('I', t_us);
-  n = appendFloat(n, quat.w(), QUAT_DECIMALS);
-  n = appendFloat(n, quat.x(), QUAT_DECIMALS);
-  n = appendFloat(n, quat.y(), QUAT_DECIMALS);
-  n = appendFloat(n, quat.z(), QUAT_DECIMALS);
-  /* deg/s -> rad/s; see the unit table in the file header. */
-  n = appendFloat(n, gyro.x() * DEG_TO_RAD, GYRO_DECIMALS);
-  n = appendFloat(n, gyro.y() * DEG_TO_RAD, GYRO_DECIMALS);
-  n = appendFloat(n, gyro.z() * DEG_TO_RAD, GYRO_DECIMALS);
-  /* Already m/s^2, gravity included. */
-  n = appendFloat(n, accel.x(), ACCEL_DECIMALS);
-  n = appendFloat(n, accel.y(), ACCEL_DECIMALS);
-  n = appendFloat(n, accel.z(), ACCEL_DECIMALS);
+  n = appendFloat(n, qw, QUAT_DECIMALS);
+  n = appendFloat(n, qx, QUAT_DECIMALS);
+  n = appendFloat(n, qy, QUAT_DECIMALS);
+  n = appendFloat(n, qz, QUAT_DECIMALS);
+  n = appendFloat(n, gx, GYRO_DECIMALS);
+  n = appendFloat(n, gy, GYRO_DECIMALS);
+  n = appendFloat(n, gz, GYRO_DECIMALS);
+  n = appendFloat(n, ax, ACCEL_DECIMALS);
+  n = appendFloat(n, ay, ACCEL_DECIMALS);
+  n = appendFloat(n, az, ACCEL_DECIMALS);
   n = appendUInt(n, cal_sys);
   n = appendUInt(n, cal_gyr);
   n = appendUInt(n, cal_acc);
