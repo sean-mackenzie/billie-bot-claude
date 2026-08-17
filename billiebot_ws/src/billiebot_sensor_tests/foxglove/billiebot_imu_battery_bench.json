@@ -1,0 +1,932 @@
+{
+  "configById": {
+    "DiagnosticSummary!nano_diag": {
+      "foxglovePanelTitle": "Sensor Nano diagnostics (serial / BNO055 / BMP280 / parser)",
+      "topicToRender": "/bench/sensor_nano/diagnostics",
+      "minLevel": 0,
+      "sortByLevel": true,
+      "secondsUntilStale": 5,
+      "hardwareIdFilter": "",
+      "pinnedIds": []
+    },
+    "RosOut!bench_log": {
+      "foxglovePanelTitle": "Log (/rosout) - INFO and above",
+      "topicToRender": "/rosout",
+      "minLogLevel": 2,
+      "searchTerms": [],
+      "showLevel": true,
+      "showTime": true,
+      "showName": true,
+      "showDate": false,
+      "showTimezone": false,
+      "showSourceLocation": false
+    },
+
+    "Tab!main": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "IMU Acquisition",
+          "layout": {
+            "first": {
+              "first": "Plot!imu01_gyro",
+              "second": "Plot!imu01_accel",
+              "direction": "row",
+              "splitPercentage": 50
+            },
+            "second": {
+              "first": {
+                "first": "Plot!imu01_rpy",
+                "second": "Plot!imu01_quat",
+                "direction": "row",
+                "splitPercentage": 55
+              },
+              "second": {
+                "first": {
+                  "first": "Plot!imu01_baro",
+                  "second": "Plot!imu01_mag",
+                  "direction": "row",
+                  "splitPercentage": 50
+                },
+                "second": "RawMessages!imu01_raw",
+                "direction": "row",
+                "splitPercentage": 66
+              },
+              "direction": "column",
+              "splitPercentage": 55
+            },
+            "direction": "column",
+            "splitPercentage": 45
+          }
+        },
+        {
+          "title": "IMU + EKF",
+          "layout": {
+            "first": {
+              "first": "Plot!imu02_yaw",
+              "second": "3D!imu02_frames",
+              "direction": "row",
+              "splitPercentage": 58
+            },
+            "second": {
+              "first": {
+                "first": "Plot!imu02_yawrate",
+                "second": {
+                  "first": "Plot!imu02_gyro",
+                  "second": "Plot!imu02_accel",
+                  "direction": "row",
+                  "splitPercentage": 50
+                },
+                "direction": "column",
+                "splitPercentage": 50
+              },
+              "second": "RawMessages!imu02_odom",
+              "direction": "row",
+              "splitPercentage": 65
+            },
+            "direction": "column",
+            "splitPercentage": 45
+          }
+        },
+        {
+          "title": "Battery Acquisition",
+          "layout": {
+            "first": {
+              "first": "Plot!bat01_voltage",
+              "second": {
+                "first": "Gauge!bat01_gauge",
+                "second": "Indicator!bat01_threshold",
+                "direction": "column",
+                "splitPercentage": 60
+              },
+              "direction": "row",
+              "splitPercentage": 72
+            },
+            "second": {
+              "first": {
+                "first": "Plot!bat01_adc",
+                "second": "StateTransitions!bat01_band",
+                "direction": "column",
+                "splitPercentage": 62
+              },
+              "second": "RawMessages!bat01_battery",
+              "direction": "row",
+              "splitPercentage": 62
+            },
+            "direction": "column",
+            "splitPercentage": 55
+          }
+        },
+        {
+          "title": "Battery SAFE",
+          "layout": {
+            "first": {
+              "first": "Plot!bat02_voltage",
+              "second": {
+                "first": "Indicator!bat02_mode",
+                "second": "Indicator!bat02_threshold",
+                "direction": "column",
+                "splitPercentage": 55
+              },
+              "direction": "row",
+              "splitPercentage": 64
+            },
+            "second": {
+              "first": "StateTransitions!bat02_transitions",
+              "second": "RawMessages!bat02_mission",
+              "direction": "row",
+              "splitPercentage": 62
+            },
+            "direction": "column",
+            "splitPercentage": 52
+          }
+        }
+      ]
+    },
+
+    "Plot!imu01_gyro": {
+      "foxglovePanelTitle": "Gyro X/Y/Z (rad/s) - stationary should sit inside +/-0.10",
+      "paths": [
+        {
+          "value": "/imu/data.angular_velocity.x",
+          "enabled": true,
+          "label": "gyro_x",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.angular_velocity.y",
+          "enabled": true,
+          "label": "gyro_y",
+          "color": "#ff7f0e",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.angular_velocity.z",
+          "enabled": true,
+          "label": "gyro_z",
+          "color": "#2ca02c",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "yAxisLabel": "angular velocity (rad/s)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Plot!imu01_accel": {
+      "foxglovePanelTitle": "Linear acceleration X/Y/Z + |a| (m/s^2) - |a| ~ 9.8 when stationary",
+      "paths": [
+        {
+          "value": "/imu/data.linear_acceleration.x",
+          "enabled": true,
+          "label": "accel_x",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.linear_acceleration.y",
+          "enabled": true,
+          "label": "accel_y",
+          "color": "#ff7f0e",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.linear_acceleration.z",
+          "enabled": true,
+          "label": "accel_z",
+          "color": "#2ca02c",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.linear_acceleration.@norm",
+          "enabled": true,
+          "label": "|a| magnitude",
+          "color": "#d62728",
+          "lineSize": 2,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "minYValue": -12,
+      "maxYValue": 12,
+      "yAxisLabel": "specific force incl. gravity (m/s^2)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Plot!imu01_rpy": {
+      "foxglovePanelTitle": "Orientation roll/pitch/yaw (deg) - from the fusion quaternion",
+      "paths": [
+        {
+          "value": "/imu/data.orientation.@rpy.roll.@degrees",
+          "enabled": true,
+          "label": "roll (about X)",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.orientation.@rpy.pitch.@degrees",
+          "enabled": true,
+          "label": "pitch (about Y)",
+          "color": "#ff7f0e",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.orientation.@rpy.yaw.@degrees",
+          "enabled": true,
+          "label": "yaw (about Z)",
+          "color": "#2ca02c",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "minYValue": -180,
+      "maxYValue": 180,
+      "yAxisLabel": "angle (deg)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Plot!imu01_quat": {
+      "foxglovePanelTitle": "Orientation quaternion W/X/Y/Z - unit norm expected",
+      "paths": [
+        {
+          "value": "/imu/data.orientation.w",
+          "enabled": true,
+          "label": "q.w",
+          "color": "#7f7f7f",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.orientation.x",
+          "enabled": true,
+          "label": "q.x",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.orientation.y",
+          "enabled": true,
+          "label": "q.y",
+          "color": "#ff7f0e",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.orientation.z",
+          "enabled": true,
+          "label": "q.z",
+          "color": "#2ca02c",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "minYValue": -1.05,
+      "maxYValue": 1.05,
+      "yAxisLabel": "quaternion component",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Plot!imu01_baro": {
+      "foxglovePanelTitle": "Barometer - pressure (hPa, left) and temperature (C, right)",
+      "paths": [
+        {
+          "value": "/barometer/pressure.fluid_pressure.@div(100)",
+          "enabled": true,
+          "label": "pressure (hPa)",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/barometer/temperature.temperature",
+          "enabled": true,
+          "label": "temperature (C)",
+          "color": "#d62728",
+          "yAxisId": "baro_temp",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "secondaryAxes": [
+        {
+          "id": "baro_temp",
+          "label": "temperature (C)"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "yAxisLabel": "pressure (hPa)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Plot!imu01_mag": {
+      "foxglovePanelTitle": "Magnetometer X/Y/Z (uT) - informational, not a UT-IMU-01 gate",
+      "paths": [
+        {
+          "value": "/imu/mag.magnetic_field.x.@mul(1000000)",
+          "enabled": true,
+          "label": "mag_x (uT)",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/mag.magnetic_field.y.@mul(1000000)",
+          "enabled": true,
+          "label": "mag_y (uT)",
+          "color": "#ff7f0e",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/mag.magnetic_field.z.@mul(1000000)",
+          "enabled": true,
+          "label": "mag_z (uT)",
+          "color": "#2ca02c",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "yAxisLabel": "magnetic field (uT)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "RawMessages!imu01_raw": {
+      "foxglovePanelTitle": "Raw /imu/data",
+      "topicPath": "/imu/data",
+      "expansion": "all",
+      "fontSize": 12
+    },
+
+    "Plot!imu02_yaw": {
+      "foxglovePanelTitle": "IMU yaw vs EKF yaw (deg) - compare the SHAPE of the +/-90 steps, not the offset",
+      "paths": [
+        {
+          "value": "/imu/data.orientation.@rpy.yaw.@degrees",
+          "enabled": true,
+          "label": "imu_yaw (deg)",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/odometry/filtered.pose.pose.orientation.@rpy.yaw.@degrees",
+          "enabled": true,
+          "label": "ekf_yaw (deg)",
+          "color": "#d62728",
+          "lineSize": 2,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "minYValue": -180,
+      "maxYValue": 180,
+      "yAxisLabel": "yaw (deg)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "3D!imu02_frames": {
+      "foxglovePanelTitle": "TF frames odom -> base_link -> imu_link (live only)",
+      "topics": {
+        "/odometry/filtered": {
+          "visible": true
+        }
+      },
+      "transforms": {
+        "odom": {
+          "visible": true
+        },
+        "base_link": {
+          "visible": true
+        },
+        "imu_link": {
+          "visible": true
+        }
+      },
+      "followTf": "odom",
+      "fixedFrame": "odom",
+      "followMode": "follow-none",
+      "scene": {
+        "labelScaleFactor": 0.24,
+        "meshUpAxis": "z_up",
+        "transforms": {
+          "visible": true,
+          "showLabel": true,
+          "axisSize": 0.3,
+          "offsetReferenceFrame": "parent"
+        }
+      },
+      "cameraState": {
+        "perspective": true,
+        "distance": 2,
+        "phi": 55,
+        "thetaOffset": 45,
+        "targetOffset": [0, 0, 0],
+        "fovy": 45,
+        "near": 0.05,
+        "far": 5000,
+        "logDepth": false
+      },
+      "layers": {}
+    },
+    "Plot!imu02_yawrate": {
+      "foxglovePanelTitle": "Yaw rate (rad/s) - IMU gyro_z vs EKF filtered vyaw",
+      "paths": [
+        {
+          "value": "/imu/data.angular_velocity.z",
+          "enabled": true,
+          "label": "imu gyro_z",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/odometry/filtered.twist.twist.angular.z",
+          "enabled": true,
+          "label": "ekf vyaw",
+          "color": "#d62728",
+          "lineSize": 2,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "yAxisLabel": "yaw rate (rad/s)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Plot!imu02_gyro": {
+      "foxglovePanelTitle": "Gyro X/Y/Z (rad/s)",
+      "paths": [
+        {
+          "value": "/imu/data.angular_velocity.x",
+          "enabled": true,
+          "label": "gyro_x",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.angular_velocity.y",
+          "enabled": true,
+          "label": "gyro_y",
+          "color": "#ff7f0e",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.angular_velocity.z",
+          "enabled": true,
+          "label": "gyro_z",
+          "color": "#2ca02c",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "yAxisLabel": "rad/s",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Plot!imu02_accel": {
+      "foxglovePanelTitle": "Linear acceleration X/Y/Z (m/s^2)",
+      "paths": [
+        {
+          "value": "/imu/data.linear_acceleration.x",
+          "enabled": true,
+          "label": "accel_x",
+          "color": "#1f77b4",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.linear_acceleration.y",
+          "enabled": true,
+          "label": "accel_y",
+          "color": "#ff7f0e",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/imu/data.linear_acceleration.z",
+          "enabled": true,
+          "label": "accel_z",
+          "color": "#2ca02c",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 30,
+      "minYValue": -12,
+      "maxYValue": 12,
+      "yAxisLabel": "m/s^2",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "RawMessages!imu02_odom": {
+      "foxglovePanelTitle": "Raw /odometry/filtered",
+      "topicPath": "/odometry/filtered",
+      "expansion": "all",
+      "fontSize": 12
+    },
+
+    "Plot!bat01_voltage": {
+      "foxglovePanelTitle": "Pack voltage (V) with the 10.5 V SAFE threshold",
+      "paths": [
+        {
+          "value": "/battery_state.voltage",
+          "enabled": true,
+          "label": "battery_state.voltage",
+          "color": "#1f77b4",
+          "lineSize": 2,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/battery_state.voltage.@mul(0).@add(10.5)",
+          "enabled": true,
+          "label": "SAFE threshold 10.5 V",
+          "color": "#d62728",
+          "lineSize": 1,
+          "lineStyle": "dashed",
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/battery_state.voltage.@mul(0).@add(9.9)",
+          "enabled": true,
+          "label": "critical 9.9 V",
+          "color": "#7f0000",
+          "lineSize": 1,
+          "lineStyle": "dotted",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 120,
+      "minYValue": 9.5,
+      "maxYValue": 13,
+      "yAxisLabel": "pack voltage (V)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Gauge!bat01_gauge": {
+      "foxglovePanelTitle": "Pack voltage",
+      "path": "/battery_state.voltage",
+      "style": "dial",
+      "minValue": 9.5,
+      "maxValue": 13,
+      "tickInterval": 0.5,
+      "showTicks": true,
+      "colorMode": "colormap",
+      "colorMap": "red-yellow-green",
+      "reverse": false,
+      "reverseDirection": false
+    },
+    "Indicator!bat01_threshold": {
+      "foxglovePanelTitle": "Voltage vs SAFE threshold",
+      "path": "/battery_state.voltage",
+      "style": "background",
+      "fontSize": 20,
+      "rules": [
+        {
+          "operator": "<",
+          "rawValue": "9.9",
+          "color": "#7f0000",
+          "label": "< 9.9 V CRITICAL"
+        },
+        {
+          "operator": "<",
+          "rawValue": "10.5",
+          "color": "#d62728",
+          "label": "< 10.5 V SAFE THRESHOLD"
+        }
+      ],
+      "fallbackColor": "#2ca02c",
+      "fallbackLabel": ">= 10.5 V"
+    },
+    "Plot!bat01_adc": {
+      "foxglovePanelTitle": "Raw Arduino ADC mean (counts, full scale 0-1023)",
+      "paths": [
+        {
+          "value": "/bench/battery/adc.data",
+          "enabled": true,
+          "label": "adc_mean (counts)",
+          "color": "#9467bd",
+          "lineSize": 2,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 120,
+      "yAxisLabel": "ADC counts",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "StateTransitions!bat01_band": {
+      "foxglovePanelTitle": "Voltage band vs 10.5 V / 9.9 V",
+      "paths": [
+        {
+          "value": "/battery_state.voltage",
+          "enabled": true,
+          "label": "pack voltage",
+          "timestampMethod": "receiveTime",
+          "customStates": {
+            "type": "range",
+            "states": [
+              {
+                "operator": "<",
+                "value": 9.9,
+                "label": "< 9.9 V critical",
+                "color": "#7f0000"
+              },
+              {
+                "operator": "<",
+                "value": 10.5,
+                "label": "< 10.5 V",
+                "color": "#d62728"
+              }
+            ],
+            "otherwise": {
+              "label": ">= 10.5 V",
+              "color": "#2ca02c"
+            }
+          }
+        }
+      ],
+      "isSynced": true,
+      "timeWindowMode": "sliding",
+      "xAxisRange": 120,
+      "showPoints": false
+    },
+    "RawMessages!bat01_battery": {
+      "foxglovePanelTitle": "Raw /battery_state (only .voltage is measured; the rest are NaN by design)",
+      "topicPath": "/battery_state",
+      "expansion": "all",
+      "fontSize": 12
+    },
+
+    "Plot!bat02_voltage": {
+      "foxglovePanelTitle": "Bridge voltage vs mission-consumed voltage, with the 10.5 V threshold",
+      "paths": [
+        {
+          "value": "/battery_state.voltage",
+          "enabled": true,
+          "label": "battery_state.voltage",
+          "color": "#1f77b4",
+          "lineSize": 2,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/billiebot/mission_status.battery_voltage",
+          "enabled": true,
+          "label": "mission_status.battery_voltage",
+          "color": "#ff7f0e",
+          "lineSize": 2,
+          "timestampMethod": "receiveTime"
+        },
+        {
+          "value": "/battery_state.voltage.@mul(0).@add(10.5)",
+          "enabled": true,
+          "label": "SAFE threshold 10.5 V",
+          "color": "#d62728",
+          "lineSize": 1,
+          "lineStyle": "dashed",
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "xAxisVal": "timestamp",
+      "timeWindowMode": "sliding",
+      "followingViewWidth": 90,
+      "minYValue": 9.8,
+      "maxYValue": 11.2,
+      "yAxisLabel": "pack voltage (V)",
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "floatingLegendPosition": "top-left",
+      "showPlotValuesInLegend": true,
+      "showYAxisGridLines": true,
+      "isSynced": true
+    },
+    "Indicator!bat02_mode": {
+      "foxglovePanelTitle": "Mission mode",
+      "path": "/billiebot/mission_status.mode",
+      "style": "background",
+      "fontSize": 24,
+      "rules": [
+        {
+          "operator": "=",
+          "rawValue": "5",
+          "color": "#d62728",
+          "label": "SAFE (5)"
+        },
+        {
+          "operator": "=",
+          "rawValue": "4",
+          "color": "#9467bd",
+          "label": "RETURN (4)"
+        },
+        {
+          "operator": "=",
+          "rawValue": "3",
+          "color": "#17becf",
+          "label": "TRACK_OBSERVE (3)"
+        },
+        {
+          "operator": "=",
+          "rawValue": "2",
+          "color": "#ff7f0e",
+          "label": "INVESTIGATE (2)"
+        },
+        {
+          "operator": "=",
+          "rawValue": "1",
+          "color": "#2ca02c",
+          "label": "PATROL (1)"
+        },
+        {
+          "operator": "=",
+          "rawValue": "0",
+          "color": "#7f7f7f",
+          "label": "IDLE (0)"
+        }
+      ],
+      "fallbackColor": "#888888",
+      "fallbackLabel": "no MissionStatus yet"
+    },
+    "Indicator!bat02_threshold": {
+      "foxglovePanelTitle": "Voltage vs SAFE threshold",
+      "path": "/battery_state.voltage",
+      "style": "background",
+      "fontSize": 20,
+      "rules": [
+        {
+          "operator": "<",
+          "rawValue": "9.9",
+          "color": "#7f0000",
+          "label": "< 9.9 V CRITICAL"
+        },
+        {
+          "operator": "<",
+          "rawValue": "10.5",
+          "color": "#d62728",
+          "label": "< 10.5 V SAFE THRESHOLD"
+        }
+      ],
+      "fallbackColor": "#2ca02c",
+      "fallbackLabel": ">= 10.5 V"
+    },
+    "StateTransitions!bat02_transitions": {
+      "foxglovePanelTitle": "Mission mode and voltage band on one time axis - watch PATROL -> SAFE",
+      "paths": [
+        {
+          "value": "/billiebot/mission_status.mode",
+          "enabled": true,
+          "label": "mission mode",
+          "timestampMethod": "receiveTime",
+          "customStates": {
+            "type": "discrete",
+            "states": [
+              {
+                "value": "0",
+                "label": "IDLE",
+                "color": "#7f7f7f"
+              },
+              {
+                "value": "1",
+                "label": "PATROL",
+                "color": "#2ca02c"
+              },
+              {
+                "value": "2",
+                "label": "INVESTIGATE",
+                "color": "#ff7f0e"
+              },
+              {
+                "value": "3",
+                "label": "TRACK_OBSERVE",
+                "color": "#17becf"
+              },
+              {
+                "value": "4",
+                "label": "RETURN",
+                "color": "#9467bd"
+              },
+              {
+                "value": "5",
+                "label": "SAFE",
+                "color": "#d62728"
+              }
+            ]
+          }
+        },
+        {
+          "value": "/battery_state.voltage",
+          "enabled": true,
+          "label": "pack voltage vs 10.5 V",
+          "timestampMethod": "receiveTime",
+          "customStates": {
+            "type": "range",
+            "states": [
+              {
+                "operator": "<",
+                "value": 9.9,
+                "label": "< 9.9 V critical",
+                "color": "#7f0000"
+              },
+              {
+                "operator": "<",
+                "value": 10.5,
+                "label": "< 10.5 V",
+                "color": "#d62728"
+              }
+            ],
+            "otherwise": {
+              "label": ">= 10.5 V",
+              "color": "#2ca02c"
+            }
+          }
+        }
+      ],
+      "isSynced": true,
+      "timeWindowMode": "sliding",
+      "xAxisRange": 90,
+      "showPoints": false
+    },
+    "RawMessages!bat02_mission": {
+      "foxglovePanelTitle": "Raw /billiebot/mission_status",
+      "topicPath": "/billiebot/mission_status",
+      "expansion": "all",
+      "fontSize": 12
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": "DiagnosticSummary!nano_diag",
+      "second": "RosOut!bench_log",
+      "direction": "row",
+      "splitPercentage": 55
+    },
+    "second": "Tab!main",
+    "direction": "column",
+    "splitPercentage": 16
+  }
+}
