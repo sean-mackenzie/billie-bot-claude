@@ -1,0 +1,411 @@
+component,category,property,value,units,value_type,provenance,notes
+OAK-D Lite,Sensor - Vision,Manufacturer Part Number,OAK-D-LITE-AF,n/a,String,Datasheet,Luxonis SKU A00483. Auto-focus variant.
+OAK-D Lite,Sensor - Vision,Vision Processor,Intel Movidius Myriad X,n/a,String,Datasheet,Luxonis RVC2 platform.
+OAK-D Lite,Sensor - Vision,Length,91,mm,Real,Datasheet,Longest dimension of the aluminium housing.
+OAK-D Lite,Sensor - Vision,Width,28,mm,Real,Datasheet,
+OAK-D Lite,Sensor - Vision,Height,17.5,mm,Real,Datasheet,
+OAK-D Lite,Sensor - Vision,Mass,61,g,Real,Datasheet,Stated in legacy Luxonis product documentation.
+OAK-D Lite,Sensor - Vision,Supply Voltage Nominal,5,V,Real,Datasheet,Delivered over USB-C VBUS.
+OAK-D Lite,Sensor - Vision,Supply Voltage Min,3.5,V,Real,Datasheet,Absolute minimum rating.
+OAK-D Lite,Sensor - Vision,Supply Voltage Max,5.5,V,Real,Datasheet,Absolute maximum. 5.25 V is the recommended ceiling.
+OAK-D Lite,Sensor - Vision,Input Current Max,1.5,A,Real,Datasheet,Absolute maximum rating.
+OAK-D Lite,Sensor - Vision,Power Consumption Min,4,W,Real,Datasheet,"Recommended operating conditions, active pipeline."
+OAK-D Lite,Sensor - Vision,Power Consumption Typical,5,W,Real,Datasheet,
+OAK-D Lite,Sensor - Vision,Power Consumption Max,6,W,Real,Datasheet,"Peak with AI, depth and encoder subsystems saturated."
+OAK-D Lite,Sensor - Vision,Idle Power,2.5,W,Real,Datasheet,"VPU booted, no pipeline running."
+OAK-D Lite,Sensor - Vision,Operating Current Typical,0.9,A,Real,Calculated,4-5 W divided by 5 V. Dominates the sensor power budget (~60-70% of suite).
+OAK-D Lite,Sensor - Vision,Peak Current,1.2,A,Real,Calculated,6 W divided by 5 V. Exceeds the USB2 900 mA ceiling - requires Y-adapter or powered hub.
+OAK-D Lite,Sensor - Vision,Operating Temperature Min,-20,degC,Real,Datasheet,At full VPU utilisation.
+OAK-D Lite,Sensor - Vision,Operating Temperature Max,50,degC,Real,Datasheet,At full VPU utilisation; lighter pipelines tolerate more.
+OAK-D Lite,Sensor - Vision,VPU Thermal Shutdown Temperature,105,degC,Real,Datasheet,Junction temperature. DepthAI shuts the device down automatically.
+OAK-D Lite,Sensor - Vision,Host Interface,USB-C USB 3.1 Gen1,n/a,String,Datasheet,Luxonis docs cite up to 10 Gbps; datasheet cites USB 3.1 Gen1.
+OAK-D Lite,Sensor - Vision,Stereo Baseline,75,mm,Real,Datasheet,Distance between the two mono cameras.
+OAK-D Lite,Sensor - Vision,Calibration EEPROM Size,32,kbit,Real,Datasheet,I2C EEPROM storing factory calibration.
+OAK-D Lite RGB Camera,Sensor - Vision,Image Sensor,Sony IMX214,n/a,String,Datasheet,Colour camera of the OAK-D Lite.
+OAK-D Lite RGB Camera,Sensor - Vision,Resolution,13.1,MP,Real,Datasheet,
+OAK-D Lite RGB Camera,Sensor - Vision,Pixel Array Width,4208,pixel,Integer,Datasheet,
+OAK-D Lite RGB Camera,Sensor - Vision,Pixel Array Height,3120,pixel,Integer,Datasheet,
+OAK-D Lite RGB Camera,Sensor - Vision,Optical Format,1/3.06,inch,String,Conflict,Luxonis docs say 1/3.06 in; datasheet says 1/3.1 in. Negligible practical difference.
+OAK-D Lite RGB Camera,Sensor - Vision,Effective Focal Length,3.37,mm,Real,Datasheet,
+OAK-D Lite RGB Camera,Sensor - Vision,Field of View Diagonal,81,deg,Real,Datasheet,Datasheet states 81.3 deg.
+OAK-D Lite RGB Camera,Sensor - Vision,Field of View Horizontal,69,deg,Real,Datasheet,
+OAK-D Lite RGB Camera,Sensor - Vision,Field of View Vertical,54,deg,Real,Datasheet,
+OAK-D Lite RGB Camera,Sensor - Vision,Shutter Type,Rolling,n/a,String,Datasheet,Electronic rolling shutter.
+OAK-D Lite RGB Camera,Sensor - Vision,Focus Type,Auto-focus,n/a,String,Datasheet,Software-settable to a fixed lens position via the DepthAI API.
+OAK-D Lite RGB Camera,Sensor - Vision,Focus Range Min,0.08,m,Real,Datasheet,8 cm. Reason to choose AF over the fixed-focus variant.
+OAK-D Lite RGB Camera,Sensor - Vision,Max Frame Rate,60,fps,Real,Datasheet,Sensor-level maximum at full resolution.
+OAK-D Lite RGB Camera,Sensor - Vision,Default Pixel Format,NV12,n/a,String,Datasheet,"YUV 4:2:0 semi-planar, 8-bit. BGR/RGB/GRAY8/YUV420p also selectable."
+OAK-D Lite RGB Camera,Sensor - Vision,Infrared Sensitive,FALSE,n/a,Boolean,Datasheet,IR cut filter fitted.
+OAK-D Lite RGB Camera,Sensor - Vision,Bandwidth at 1080p30 NV12,93,MB/s,Real,Calculated,1920 x 1080 x 1.5 bytes x 30 fps. Use on-device H.265 encoding to avoid this.
+OAK-D Lite Mono Camera,Sensor - Vision,Image Sensor,OmniVision OV7251,n/a,String,Datasheet,"Two identical units, left and right."
+OAK-D Lite Mono Camera,Sensor - Vision,Quantity,2,count,Integer,Datasheet,Left and right of the stereo pair.
+OAK-D Lite Mono Camera,Sensor - Vision,Pixel Array Width,640,pixel,Integer,Datasheet,
+OAK-D Lite Mono Camera,Sensor - Vision,Pixel Array Height,480,pixel,Integer,Datasheet,
+OAK-D Lite Mono Camera,Sensor - Vision,Optical Format,1/7.5,inch,String,Datasheet,
+OAK-D Lite Mono Camera,Sensor - Vision,Effective Focal Length,1.3,mm,Real,Datasheet,
+OAK-D Lite Mono Camera,Sensor - Vision,Field of View Diagonal,86,deg,Real,Datasheet,Datasheet states 85.6 deg.
+OAK-D Lite Mono Camera,Sensor - Vision,Field of View Horizontal,73,deg,Real,Datasheet,Datasheet states 72.9 deg.
+OAK-D Lite Mono Camera,Sensor - Vision,Field of View Vertical,58,deg,Real,Datasheet,Datasheet states 57.7 deg.
+OAK-D Lite Mono Camera,Sensor - Vision,Shutter Type,Global,n/a,String,Datasheet,Important on a moving platform - no rolling-shutter skew.
+OAK-D Lite Mono Camera,Sensor - Vision,Focus Type,Fixed,n/a,String,Datasheet,
+OAK-D Lite Mono Camera,Sensor - Vision,Focus Range Min,0.065,m,Real,Datasheet,6.5 cm to infinity.
+OAK-D Lite Mono Camera,Sensor - Vision,Max Frame Rate,120,fps,Real,Datasheet,
+OAK-D Lite Mono Camera,Sensor - Vision,Output Pixel Format,GRAY8,n/a,String,Datasheet,8-bit luminance. Native sensor output is 8- or 10-bit RAW.
+OAK-D Lite Mono Camera,Sensor - Vision,Infrared Sensitive,FALSE,n/a,Boolean,Datasheet,OAK-D Lite has no IR dot projector and no IR illuminator.
+OAK-D Lite Stereo Depth,Sensor - Vision,Stereo Baseline,75,mm,Real,Datasheet,
+OAK-D Lite Stereo Depth,Sensor - Vision,Depth Range Min,0.8,m,Real,Conflict,Luxonis hardware docs say 0.8-12 m; the shop page says 0.4-8 m. Characterise on the robot before fixing nav thresholds.
+OAK-D Lite Stereo Depth,Sensor - Vision,Depth Range Max,12,m,Real,Conflict,See Depth Range Min note. Alternate official figure is 8 m.
+OAK-D Lite Stereo Depth,Sensor - Vision,MinZ 480p Extended Disparity,0.2,m,Real,Datasheet,Closest measurable distance with extended disparity enabled.
+OAK-D Lite Stereo Depth,Sensor - Vision,MinZ 480p Standard,0.375,m,Real,Datasheet,Datasheet gives 35-40 cm; midpoint used here.
+OAK-D Lite Stereo Depth,Sensor - Vision,Depth Error Below 4 m,2,%,Real,Datasheet,Median absolute depth error.
+OAK-D Lite Stereo Depth,Sensor - Vision,Depth Error 4 to 7 m,4,%,Real,Datasheet,Median absolute depth error.
+OAK-D Lite Stereo Depth,Sensor - Vision,Depth Error 7 to 10 m,6,%,Real,Datasheet,Median absolute depth error.
+OAK-D Lite Stereo Depth,Sensor - Vision,Depth Map Data Type,uint16,n/a,String,Datasheet,"1 LSB = 1 mm. A value of 0 means invalid/no measurement, not zero distance - filter explicitly."
+OAK-D Lite Stereo Depth,Sensor - Vision,Depth Map Resolution,1,mm,Real,Datasheet,One least-significant bit equals one millimetre.
+OAK-D Lite Stereo Depth,Sensor - Vision,Max Disparity Throughput,200,fps,Real,Datasheet,Stereo pipeline capability.
+OAK-D Lite Stereo Depth,Sensor - Vision,Bandwidth at 640x480 30 fps,18.4,MB/s,Real,Calculated,640 x 480 x 2 bytes x 30 fps.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Device,Bosch BMI270,n/a,String,Datasheet,VERIFY PRESENCE: all original Kickstarter OAK-D Lite units shipped without an IMU.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Degrees of Freedom,6,count,Integer,Datasheet,3-axis accelerometer plus 3-axis gyroscope.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Magnetometer Present,FALSE,n/a,Boolean,Datasheet,No absolute heading available from this device.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,On-Sensor Fusion Available,FALSE,n/a,Boolean,Datasheet,No quaternion/rotation vector on the BMI270 path in DepthAI.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Accelerometer Range Options,"+/-2, +/-4, +/-8, +/-16",g,String,Datasheet,Selectable full-scale ranges.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Accelerometer Sensitivity at +/-2g,16384,LSB/g,Real,Datasheet,8192 / 4096 / 2048 LSB/g at +/-4/8/16 g.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Accelerometer Noise Density,0.16,mg/sqrt(Hz),Real,Datasheet,Typical.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Gyroscope Range Options,"+/-125, +/-250, +/-500, +/-1000, +/-2000",deg/s,String,Datasheet,Selectable full-scale ranges.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Gyroscope Sensitivity at +/-125dps,262.144,LSB/(deg/s),Real,Datasheet,Halves with each range step up.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Gyroscope Noise Density,0.007,deg/s/sqrt(Hz),Real,Datasheet,"Typical, performance mode."
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Max Practical Report Rate,250,Hz,Real,Datasheet,Requests above 400 Hz top out at ~250 Hz. Requested rates round DOWN to the next supported value.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Supported Report Rates,"25, 50, 100, 200, 250",Hz,String,Datasheet,Stable request rates for both accelerometer and gyroscope.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Accelerometer Output Unit,m/s^2,n/a,String,Datasheet,float32 per axis in DepthAI IMUPacket.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Gyroscope Output Unit,rad/s,n/a,String,Datasheet,float32 per axis in DepthAI IMUPacket.
+OAK-D Lite IMU (BMI270),Sensor - Inertial,Bandwidth at 200 Hz,8,kB/s,Real,Calculated,Accelerometer plus gyroscope with metadata.
+OAK-D Lite Neural Engine,Sensor - Vision,Total VPU Compute,4,TOPS,Real,Datasheet,Whole Myriad X device.
+OAK-D Lite Neural Engine,Sensor - Vision,Neural Inference Allocation,1.4,TOPS,Real,Datasheet,Portion dedicated to neural inference.
+OAK-D Lite Neural Engine,Sensor - Vision,Deployed Model,YOLOv8n,n/a,String,Repo-design,"Converted to Myriad X blob format, 416 x 416 input."
+OAK-D Lite Neural Engine,Sensor - Vision,Model Input Size,416,pixel,Integer,Repo-design,"Square input, set at Luxonis blob conversion."
+OAK-D Lite Neural Engine,Sensor - Vision,Detection Confidence Threshold,0.5,dimensionless,Real,Repo-config,"perception.yaml, oakd_dog_detector.confidence_threshold."
+OAK-D Lite Neural Engine,Sensor - Vision,Detection Publish Rate,5,Hz,Real,Repo-config,"perception.yaml, oakd_dog_detector.publish_rate_hz."
+OAK-D Lite Neural Engine,Sensor - Vision,Spatial Coordinate Unit,mm,n/a,String,Datasheet,"SpatialImgDetections returns X, Y, Z in millimetres in the camera frame."
+OAK-D Lite Neural Engine,Sensor - Vision,Confidence Output Range,0 to 1,dimensionless,String,Datasheet,Float bounded 0-1 per detection.
+OAK-D Lite Neural Engine,Sensor - Vision,Bounding Box Format,Normalised 0-1,n/a,String,Datasheet,"xmin, ymin, xmax, ymax as floats relative to image size."
+MLX90640,Sensor - Thermal,Manufacturer Part Number,MLX90640ESF-BAB-000-TU,n/a,String,Datasheet,B in the third option-code position denotes the 55 x 35 deg lens. Adafruit breakout PID 4407.
+MLX90640,Sensor - Thermal,Package,TO-39 4-lead,n/a,String,Datasheet,With integrated lens.
+MLX90640,Sensor - Thermal,Pixel Array Width,32,pixel,Integer,Datasheet,32 columns.
+MLX90640,Sensor - Thermal,Pixel Array Height,24,pixel,Integer,Datasheet,24 rows. 768 pixels total.
+MLX90640,Sensor - Thermal,Pixel Count,768,pixel,Integer,Datasheet,32 x 24.
+MLX90640,Sensor - Thermal,Field of View Horizontal,55,deg,Real,Datasheet,Typical.
+MLX90640,Sensor - Thermal,Field of View Vertical,35,deg,Real,Datasheet,Typical.
+MLX90640,Sensor - Thermal,Field of View Diagonal,65,deg,Real,Calculated,"Approximate, from the 55 x 35 deg rectangular FOV."
+MLX90640,Sensor - Thermal,Instantaneous FOV per Pixel Horizontal,1.72,deg,Real,Calculated,55 deg / 32 columns.
+MLX90640,Sensor - Thermal,Instantaneous FOV per Pixel Vertical,1.46,deg,Real,Calculated,35 deg / 24 rows.
+MLX90640,Sensor - Thermal,Ground Sample Distance at 1 m,3.0,cm,Real,Calculated,"Horizontal, per pixel. 2.5 cm vertical."
+MLX90640,Sensor - Thermal,Ground Sample Distance at 3 m,9.0,cm,Real,Calculated,"Horizontal, per pixel. A 50 cm wide adult subtends only 5-6 pixels - this is a presence detector, not an imager."
+MLX90640,Sensor - Thermal,Central Pointing Error,3,deg,Real,Datasheet,Maximum deviation from normal.
+MLX90640,Sensor - Thermal,Defective Pixels Max,4,pixel,Integer,Datasheet,Flagged in on-chip EEPROM; replace by neighbour interpolation.
+MLX90640,Sensor - Thermal,Object Temperature Range Min,-40,degC,Real,Datasheet,Measurable target temperature.
+MLX90640,Sensor - Thermal,Object Temperature Range Max,300,degC,Real,Datasheet,Measurable target temperature.
+MLX90640,Sensor - Thermal,Operating Temperature Min,-40,degC,Real,Datasheet,Ambient.
+MLX90640,Sensor - Thermal,Operating Temperature Max,85,degC,Real,Datasheet,Ambient.
+MLX90640,Sensor - Thermal,Accuracy,2,degC,Real,Datasheet,"Adafruit product-level figure, +/- over the 0-100 degC range. Valid only under settled isothermal conditions AND when the target fills the pixel FOV."
+MLX90640,Sensor - Thermal,Frame Accuracy,1,degC,Real,Datasheet,"+/-, datasheet BAA reference case."
+MLX90640,Sensor - Thermal,Zone 1 Non-Uniformity,0.5,degC,Real,Datasheet,"+/-, datasheet BAA reference case."
+MLX90640,Sensor - Thermal,NETD at 1 Hz,0.25,K,Real,Datasheet,"Noise-equivalent temperature difference, BAB variant average. Minimum 0.20 K, sigma 0.05 K. The BAA variant achieves 0.14 K."
+MLX90640,Sensor - Thermal,ADC Resolution,18,bit,Integer,Datasheet,"Default. 16, 17, 18 or 19 bit selectable."
+MLX90640,Sensor - Thermal,Emissivity,User-defined,dimensionless,String,Datasheet,NOT stored in the device and NOT defaulted by the sensor - the host must supply it. Set it for the target material (~0.98 for skin/fur) or absolute temperatures will be wrong.
+MLX90640,Sensor - Thermal,Refresh Rate Options,"0.5, 1, 2, 4, 8, 16, 32, 64",Hz,String,Datasheet,"This is the SUBPAGE rate, not the full-image rate."
+MLX90640,Sensor - Thermal,Refresh Rate Default,2,Hz,Real,Datasheet,Subpage rate.
+MLX90640,Sensor - Thermal,Subpages per Frame,2,count,Integer,Datasheet,A full thermal image requires reading both subpages.
+MLX90640,Sensor - Thermal,Effective Full Image Rate at 16 Hz Refresh,8,Hz,Real,Calculated,"The configured refresh rate is the SUBPAGE rate; a full image needs both subpages, so the full-image rate is always half the configured refresh rate."
+MLX90640,Sensor - Thermal,Configured Publish Rate,4,Hz,Real,Repo-config,"perception.yaml, thermal_node.publish_rate_hz."
+MLX90640,Sensor - Thermal,Practical Max Refresh Rate,16,Hz,Real,Datasheet,Adafruit: 32 Hz is theoretical but was not achievable in practice.
+MLX90640,Sensor - Thermal,Reading Pattern,Chess,n/a,String,Datasheet,Factory-calibrated default and recommended. Interleaved/TV mode also available.
+MLX90640,Sensor - Thermal,First Valid Data Delay,540,ms,Real,Calculated,40 ms + (1 / refresh rate) at the 2 Hz default.
+MLX90640,Sensor - Thermal,Thermal Stabilisation Time,240,s,Real,Datasheet,Up to 4 minutes to reach rated accuracy. Do not trust absolute temperature immediately after power-up.
+MLX90640,Sensor - Thermal,Supply Voltage Min,3.0,V,Real,Datasheet,Sensor VDD.
+MLX90640,Sensor - Thermal,Supply Voltage Typical,3.3,V,Real,Datasheet,Melexis recommends holding VDD to 3.3 V +/- 0.1 V for best performance.
+MLX90640,Sensor - Thermal,Supply Voltage Max,3.6,V,Real,Datasheet,Sensor VDD.
+MLX90640,Sensor - Thermal,Supply Current Min,14,mA,Real,Datasheet,Sensor IDD.
+MLX90640,Sensor - Thermal,Supply Current Typical,18,mA,Real,Datasheet,Sensor IDD.
+MLX90640,Sensor - Thermal,Supply Current Max,25,mA,Real,Datasheet,Sensor IDD.
+MLX90640,Sensor - Thermal,Power Typical,59.4,mW,Real,Calculated,18 mA x 3.3 V.
+MLX90640,Sensor - Thermal,Power Max,82.5,mW,Real,Calculated,25 mA x 3.3 V.
+MLX90640,Sensor - Thermal,Breakout Input Voltage Min,3.0,V,Real,Datasheet,Adafruit breakout has an on-board regulator and level shifting.
+MLX90640,Sensor - Thermal,Breakout Input Voltage Max,5.0,V,Real,Datasheet,Adafruit breakout.
+MLX90640,Sensor - Thermal,Breakout Total Current,22.5,mA,Real,Estimated,20-25 mA including regulator and pull-ups; midpoint used. Measure on the bench.
+MLX90640,Sensor - Thermal,Breakout Length,25.7,mm,Real,Datasheet,"Adafruit PID 4407, with STEMMA QT/Qwiic connectors."
+MLX90640,Sensor - Thermal,Breakout Width,17.7,mm,Real,Datasheet,
+MLX90640,Sensor - Thermal,Breakout Height,16.0,mm,Real,Datasheet,
+MLX90640,Sensor - Thermal,Digital Interface,I2C,n/a,String,Datasheet,Slave only.
+MLX90640,Sensor - Thermal,I2C Address,0x33,n/a,String,Datasheet,Programmable; 0x00 must be avoided. Matches perception.yaml i2c_address.
+MLX90640,Sensor - Thermal,I2C Clock Max,1,MHz,Real,Datasheet,FM+ mode. The sensor needs this speed - see the bus-sharing caveat.
+MLX90640,Sensor - Thermal,I2C Bus Number,1,count,Integer,Repo-config,"perception.yaml, thermal_node.i2c_bus."
+MLX90640,Sensor - Thermal,Logic Level Tolerance,5,V,Real,Datasheet,SDA/SCL are 5 V tolerant.
+MLX90640,Sensor - Thermal,Raw Pixel Data Format,int16,n/a,String,Datasheet,768 x 16-bit signed ADC counts proportional to received IR energy - NOT temperature.
+MLX90640,Sensor - Thermal,Application Output Format,float32,n/a,String,Datasheet,768-element IEEE-754 array in degrees Celsius after the driver runs the compensation chain.
+MLX90640,Sensor - Thermal,Application Output Unit,degC,n/a,String,Datasheet,"Row-major, 32 wide by 24 tall."
+MLX90640,Sensor - Thermal,Bandwidth at 8 Images per Second,24.6,kB/s,Real,Calculated,768 floats x 4 bytes x 8 full frames/s.
+Pi Camera Module 3 NoIR,Sensor - Vision,Manufacturer Part Number,SC0873,n/a,String,Datasheet,Standard lens (75 deg) NoIR variant.
+Pi Camera Module 3 NoIR,Sensor - Vision,Image Sensor,Sony IMX708,n/a,String,Datasheet,"Back-illuminated stacked CMOS, Quad Bayer."
+Pi Camera Module 3 NoIR,Sensor - Vision,Resolution,11.9,MP,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Pixel Array Width,4608,pixel,Integer,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Pixel Array Height,2592,pixel,Integer,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Pixel Pitch,1.4,um,Real,Datasheet,1.4 x 1.4 um.
+Pi Camera Module 3 NoIR,Sensor - Vision,Sensor Diagonal,7.4,mm,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Field of View Diagonal,75,deg,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Field of View Horizontal,66,deg,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Field of View Vertical,41,deg,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Focal Length,4.74,mm,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,F-Number,1.8,dimensionless,Real,Datasheet,f/1.8.
+Pi Camera Module 3 NoIR,Sensor - Vision,Focus Range Min,0.10,m,Real,Datasheet,10 cm to infinity.
+Pi Camera Module 3 NoIR,Sensor - Vision,Autofocus System,PDAF,n/a,String,Datasheet,Phase Detection Autofocus. Lock focus manually on a vibrating platform to stop AF hunting.
+Pi Camera Module 3 NoIR,Sensor - Vision,Shutter Type,Rolling,n/a,String,Estimated,Not stated in the product brief; the IMX708 is a rolling-shutter sensor.
+Pi Camera Module 3 NoIR,Sensor - Vision,Infrared Sensitive,TRUE,n/a,Boolean,Datasheet,No IR cut filter. Near-IR leaks into all three Bayer channels - treat as effectively monochrome under IR illumination.
+Pi Camera Module 3 NoIR,Sensor - Vision,HDR Max Output,3,MP,Real,Datasheet,HDR mode output resolution ceiling.
+Pi Camera Module 3 NoIR,Sensor - Vision,Supply Voltage,3.3,V,Real,Datasheet,Sourced from the host CSI connector.
+Pi Camera Module 3 NoIR,Sensor - Vision,Current Draw,250,mA,Real,Estimated,Raspberry Pi does not publish this. Derived from forum measurements of Camera Module 2/3. MEASURE ON THE BENCH.
+Pi Camera Module 3 NoIR,Sensor - Vision,Power,0.83,W,Real,Estimated,0.25 A x 3.3 V. Only significant unpublished power figure in the suite.
+Pi Camera Module 3 NoIR,Sensor - Vision,Operating Temperature Min,0,degC,Real,Datasheet,Narrowest of any component in the suite.
+Pi Camera Module 3 NoIR,Sensor - Vision,Operating Temperature Max,50,degC,Real,Datasheet,LIMITING COMPONENT - sets BillieBot's usable ambient envelope at 0-50 degC.
+Pi Camera Module 3 NoIR,Sensor - Vision,Length,25,mm,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Width,24,mm,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Height,11.5,mm,Real,Datasheet,
+Pi Camera Module 3 NoIR,Sensor - Vision,Ribbon Cable Length,200,mm,Real,Datasheet,15 x 1 mm FPC.
+Pi Camera Module 3 NoIR,Sensor - Vision,Image Data Interface,MIPI CSI-2,n/a,String,Datasheet,Control is over 2-wire serial (I2C).
+Pi Camera Module 3 NoIR,Sensor - Vision,Native Output Format,RAW10,n/a,String,Datasheet,"10-bit Bayer, CSI-2 packed (SRGGB10_CSI2P), 5 bytes per 4 pixels."
+Pi Camera Module 3 NoIR,Sensor - Vision,Post-ISP Formats,"YUV420, NV12, RGB888, BGR888, XRGB8888",n/a,String,Datasheet,Selectable per-stream in libcamera.
+Pi Camera Module 3 NoIR,Sensor - Vision,Configured Frame Width,640,pixel,Integer,Repo-config,"perception.yaml, noir_cam_node.width."
+Pi Camera Module 3 NoIR,Sensor - Vision,Configured Frame Height,480,pixel,Integer,Repo-config,"perception.yaml, noir_cam_node.height."
+Pi Camera Module 3 NoIR,Sensor - Vision,Configured Publish Rate,5,Hz,Real,Repo-config,"perception.yaml, noir_cam_node.publish_rate_hz."
+Pi Camera Module 3 NoIR,Sensor - Vision,Bandwidth at 1080p50 YUV420,155,MB/s,Real,Calculated,"Host-side, post-ISP. Use a binned mode unless full frames are genuinely needed."
+reSpeaker XVF3800,Sensor - Audio,Manufacturer Part Number,101991441,n/a,String,Datasheet,"Seeed SKU, variant without XIAO ESP32S3."
+reSpeaker XVF3800,Sensor - Audio,Voice Processor,XMOS XVF3800,n/a,String,Datasheet,"xcore.ai XU316-1024-QF60B core, 7 x 7 mm 60-pin QFN."
+reSpeaker XVF3800,Sensor - Audio,Audio Codec,TI TLV320AIC3104,n/a,String,Datasheet,
+reSpeaker XVF3800,Sensor - Audio,Microphone Count,4,count,Integer,Datasheet,"PDM MEMS, circular array."
+reSpeaker XVF3800,Sensor - Audio,Microphone Spacing,66,mm,Real,Datasheet,"Approximate side spacing; coordinates (+/-0.033, +/-0.033, 0) m returned by the control command."
+reSpeaker XVF3800,Sensor - Audio,Pickup Pattern,360,deg,Real,Datasheet,Only sensor in the suite with full 360 deg awareness - primary cue for attention outside the optical FOV.
+reSpeaker XVF3800,Sensor - Audio,Far-Field Pickup Range,5,m,Real,Datasheet,Maximum.
+reSpeaker XVF3800,Sensor - Audio,AGC Range,60,dB,Real,Datasheet,Automatic gain control.
+reSpeaker XVF3800,Sensor - Audio,Sample Rate,16,kHz,Real,Datasheet,
+reSpeaker XVF3800,Sensor - Audio,Bit Depth,32,bit,Integer,Datasheet,Host stacks commonly negotiate S32_LE; ALSA plughw converts to S16_LE on request.
+reSpeaker XVF3800,Sensor - Audio,USB Audio Class,2.0,dimensionless,Real,Datasheet,High-speed USB 2.0 device over USB Type-C.
+reSpeaker XVF3800,Sensor - Audio,Channel Count 6-Channel Firmware,6,count,Integer,Datasheet,"Ch0 Conference, Ch1 ASR beam, Ch2-5 raw Mic 0-3."
+reSpeaker XVF3800,Sensor - Audio,Channel Count 2-Channel Firmware,2,count,Integer,Datasheet,"Ch0 Conference, Ch1 ASR beam."
+reSpeaker XVF3800,Sensor - Audio,Configured Input Channels,2,count,Integer,Repo-config,"audio.yaml, audio_classifier.input_channels. Note: the spec reference recommends the 6-channel firmware to retain raw mic streams."
+reSpeaker XVF3800,Sensor - Audio,Configured Classification Channel,1,count,Integer,Repo-config,audio.yaml - the ASR beam.
+reSpeaker XVF3800,Sensor - Audio,Configured Publish Rate,2,Hz,Real,Repo-config,"audio.yaml, audio_classifier.publish_rate_hz."
+reSpeaker XVF3800,Sensor - Audio,Configured Chunk Duration,0.975,s,Real,Repo-config,audio.yaml - YAMNet inference window.
+reSpeaker XVF3800,Sensor - Audio,Configured Energy Threshold,-40,dB,Real,Repo-config,"audio.yaml, audio_classifier.energy_threshold_db."
+reSpeaker XVF3800,Sensor - Audio,DoA Output Format,float32,n/a,String,Datasheet,AEC_AZIMUTH_VALUES returns 4 values in radians.
+reSpeaker XVF3800,Sensor - Audio,DoA Output Unit,rad,n/a,String,Datasheet,Consume the auto-selected beam (4th value) - it is the beam the pipeline chose.
+reSpeaker XVF3800,Sensor - Audio,Core Power USB Mode,400,mW,Real,Datasheet,"XVF3800 VDD core, typical. 345 mW in I2S mode."
+reSpeaker XVF3800,Sensor - Audio,Board Power Typical,1.5,W,Real,Estimated,"Seeed does not publish a board-level figure. 1-2 W range; midpoint used. Core 400 mW plus codec, regulators, PDM mics, USB PHY."
+reSpeaker XVF3800,Sensor - Audio,Board Current at 5 V,300,mA,Real,Estimated,200-400 mA range; midpoint used. MEASURE ON THE BENCH.
+reSpeaker XVF3800,Sensor - Audio,LED Ring Current Max,700,mA,Real,Estimated,12 x WS2812 at full-white full-brightness. Budget 60-150 mA at DoA-indication brightness. Largest discretionary load - disable with led_effect 0 if unused.
+reSpeaker XVF3800,Sensor - Audio,LED Count,12,count,Integer,Datasheet,WS2812 addressable RGB.
+reSpeaker XVF3800,Sensor - Audio,Speaker Amplifier Rating,5,W,Real,Datasheet,JST speaker connector. Dominates the board budget if used.
+reSpeaker XVF3800,Sensor - Audio,Bandwidth 6-Channel,384,kB/s,Real,Calculated,16000 x 4 bytes x 6 channels.
+reSpeaker XVF3800,Sensor - Audio,Board Dimensions,Not published,n/a,String,Unpublished,"Seeed does not publish board dimensions. MEASURE, or derive from the published 3D STEP files."
+reSpeaker XVF3800,Sensor - Audio,Microphone Inlet Face,Back (logo side),n/a,String,Datasheet,Sound inlet is on the side with the printed Seeed Studio logo and must face the sound source. Easy to get backwards in an enclosure.
+DFRobot SEN0253,Sensor - Inertial,Manufacturer Part Number,SEN0253,n/a,String,Datasheet,Gravity 10 DOF IMU AHRS carrier board: BNO055 + BMP280.
+DFRobot SEN0253,Sensor - Inertial,Operating Voltage Min,3.3,V,Real,Datasheet,
+DFRobot SEN0253,Sensor - Inertial,Operating Voltage Max,5.0,V,Real,Datasheet,
+DFRobot SEN0253,Sensor - Inertial,Operating Current,5,mA,Real,Conflict,DFRobot board figure. LOWER than Bosch's 12.3 mA for the BNO055 alone - likely quoted for a low-power or non-fusion mode.
+DFRobot SEN0253,Sensor - Inertial,Operating Current Planning Value,17.5,mA,Real,Estimated,"Conservative 15-20 mA at 5 V; midpoint used. Use this, not 5 mA, for battery-life calculations."
+DFRobot SEN0253,Sensor - Inertial,Power Planning Value,87.5,mW,Real,Estimated,"17.5 mA x 5 V. Negligible next to the OAK-D Lite, so the conflict is low-risk."
+DFRobot SEN0253,Sensor - Inertial,Length,32,mm,Real,Datasheet,
+DFRobot SEN0253,Sensor - Inertial,Width,27,mm,Real,Datasheet,
+DFRobot SEN0253,Sensor - Inertial,Operating Temperature Min,-40,degC,Real,Datasheet,Board level.
+DFRobot SEN0253,Sensor - Inertial,Operating Temperature Max,80,degC,Real,Datasheet,Board level - narrower than the BNO055 die itself.
+DFRobot SEN0253,Sensor - Inertial,Digital Interface,I2C,n/a,String,Datasheet,Gravity-I2C 4-pin plus broken-out header. UART and HID-over-I2C selectable via PS1/PS2.
+DFRobot SEN0253,Sensor - Inertial,Deployment Status,Blocked,n/a,String,Repo-design,Right encoder occupies Arduino A4/A5 (the I2C pins). Requires rewire to D4/D7 before use_imu can be set true.
+BNO055,Sensor - Inertial,Degrees of Freedom,9,count,Integer,Datasheet,"Triaxial accelerometer, gyroscope and magnetometer plus on-chip Cortex-M0+ fusion."
+BNO055,Sensor - Inertial,Accelerometer Range Options,"+/-2, +/-4, +/-8, +/-16",g,String,Datasheet,Auto-set to +/-4 g in fusion modes.
+BNO055,Sensor - Inertial,Accelerometer Resolution,14,bit,Integer,Datasheet,
+BNO055,Sensor - Inertial,Accelerometer Sensitivity,1,LSB/mg,Real,Datasheet,All ranges.
+BNO055,Sensor - Inertial,Accelerometer Zero-G Offset,80,mg,Real,Datasheet,"+/-, typical. +/-150 mg maximum over lifetime."
+BNO055,Sensor - Inertial,Accelerometer Noise Density,150,ug/sqrt(Hz),Real,Datasheet,Typical; 190 max.
+BNO055,Sensor - Inertial,Accelerometer Bandwidth Fusion Default,62.5,Hz,Real,Datasheet,Options 7.81 Hz to 1 kHz.
+BNO055,Sensor - Inertial,Gyroscope Range Options,"+/-125, +/-250, +/-500, +/-1000, +/-2000",deg/s,String,Datasheet,Auto-set to +/-2000 deg/s in fusion modes.
+BNO055,Sensor - Inertial,Gyroscope Resolution,16,bit,Integer,Datasheet,
+BNO055,Sensor - Inertial,Gyroscope Sensitivity,16.0,LSB/(deg/s),Real,Datasheet,Or 900 LSB/(rad/s).
+BNO055,Sensor - Inertial,Gyroscope Zero-Rate Offset,1,deg/s,Real,Datasheet,"+/-, typical. +/-3 deg/s maximum."
+BNO055,Sensor - Inertial,Gyroscope Output Noise,0.1,deg/s,Real,Datasheet,RMS typical at 47 Hz bandwidth; 0.3 max. Equivalent to 0.014 deg/s/sqrt(Hz).
+BNO055,Sensor - Inertial,Gyroscope Bandwidth Fusion Default,32,Hz,Real,Datasheet,Options 12-523 Hz.
+BNO055,Sensor - Inertial,Magnetometer Range XY,1300,uT,Real,Datasheet,"+/-, typical."
+BNO055,Sensor - Inertial,Magnetometer Range Z,2500,uT,Real,Datasheet,"+/-, typical."
+BNO055,Sensor - Inertial,Magnetometer Resolution,0.3,uT,Real,Datasheet,Device resolution.
+BNO055,Sensor - Inertial,Magnetometer Output Noise,0.6,uT,Real,Datasheet,Regular preset; 0.3 uT in high-accuracy preset.
+BNO055,Sensor - Inertial,Heading Accuracy,2.5,deg,Real,Datasheet,"+/-, typical, in a 30 uT horizontal field at 25 degC, fully calibrated with ideal tilt compensation."
+BNO055,Sensor - Inertial,Magnetometer Zero-B Offset Calibrated,2,uT,Real,Datasheet,"+/-, after fusion-mode calibration. +/-40 uT uncalibrated."
+BNO055,Sensor - Inertial,Fusion Output Rate NDOF,100,Hz,Real,Datasheet,"Accelerometer and gyroscope at 100 Hz, magnetometer at 20 Hz."
+BNO055,Sensor - Inertial,Magnetometer Data Rate NDOF,20,Hz,Real,Datasheet,
+BNO055,Sensor - Inertial,Data Rate Tolerance,1,%,Real,Datasheet,"+/-, using the internal oscillator. An external 32 kHz crystal improves this."
+BNO055,Sensor - Inertial,Quaternion Scaling,16384,LSB,Real,Datasheet,"1 unit = 2^14 LSB. Registers 0x20-0x27, 4 x int16."
+BNO055,Sensor - Inertial,Euler Angle Scaling,16,LSB/deg,Real,Datasheet,Or 900 LSB/rad. Registers 0x1A-0x1F.
+BNO055,Sensor - Inertial,Acceleration Scaling,100,LSB/(m/s^2),Real,Datasheet,Or 1 LSB/mg. Registers 0x08-0x0D.
+BNO055,Sensor - Inertial,Angular Rate Scaling,16,LSB/(deg/s),Real,Datasheet,Or 900 LSB/(rad/s). Registers 0x14-0x19.
+BNO055,Sensor - Inertial,Magnetic Field Scaling,16,LSB/uT,Real,Datasheet,Registers 0x0E-0x13.
+BNO055,Sensor - Inertial,Temperature Resolution,1,degC,Real,Datasheet,"1 LSB = 1 degC, int8, register 0x34, 1 Hz."
+BNO055,Sensor - Inertial,Heading Output Range,0 to 360,deg,String,Datasheet,"Android format, clockwise increases. Roll -90 to +90; pitch +180 to -180 (clockwise DECREASES). Pick a format and document it in the ICD."
+BNO055,Sensor - Inertial,Supply Voltage VDD Min,2.4,V,Real,Datasheet,Sensor supply.
+BNO055,Sensor - Inertial,Supply Voltage VDD Max,3.6,V,Real,Datasheet,Sensor supply.
+BNO055,Sensor - Inertial,Supply Current 9DOF at 100 Hz,12.3,mA,Real,Datasheet,"Maximum, normal mode, VDD 3 V / VDDIO 2.5 V."
+BNO055,Sensor - Inertial,Supply Current Suspend,0.04,mA,Real,Datasheet,Maximum.
+BNO055,Sensor - Inertial,Operating Temperature Min,-40,degC,Real,Datasheet,
+BNO055,Sensor - Inertial,Operating Temperature Max,85,degC,Real,Datasheet,
+BNO055,Sensor - Inertial,Start-Up Time,400,ms,Real,Datasheet,Off to CONFIG mode. POR to CONFIG is 650 ms.
+BNO055,Sensor - Inertial,Mode Switch Time to Operating,7,ms,Real,Datasheet,CONFIG to any operating mode. 19 ms in the reverse direction.
+BNO055,Sensor - Inertial,Shock Survival,10000,g,Real,Datasheet,For durations <= 200 us; 2000 g for <= 1 ms.
+BNO055,Sensor - Inertial,I2C Address,0x28,n/a,String,Datasheet,Default; 0x29 selectable.
+BNO055,Sensor - Inertial,Bandwidth at 100 Hz,2.1,kB/s,Real,Calculated,"Quaternion + linear acceleration + gyroscope + calibration status, ~21 bytes per sample."
+BMP280,Sensor - Environmental,Pressure Range Min,300,hPa,Real,Datasheet,
+BMP280,Sensor - Environmental,Pressure Range Max,1100,hPa,Real,Datasheet,
+BMP280,Sensor - Environmental,Pressure Relative Accuracy,0.12,hPa,Real,Datasheet,+/-. Equivalent to about +/-1 m of altitude - the trustworthy figure for detecting floor changes or ramps.
+BMP280,Sensor - Environmental,Pressure Absolute Accuracy,1,hPa,Real,Datasheet,+/-. Equivalent to about +/-8.33 m of altitude - do not use for navigation.
+BMP280,Sensor - Environmental,Altitude Accuracy Relative,1,m,Real,Datasheet,"+/-, derived from relative pressure accuracy."
+BMP280,Sensor - Environmental,Altitude Accuracy Absolute,8.33,m,Real,Datasheet,"+/-, derived from absolute pressure accuracy. Also requires a sea-level pressure reference."
+BMP280,Sensor - Environmental,Temperature Range Min,0,degC,Real,Datasheet,"Measurement range, narrower than the BNO055."
+BMP280,Sensor - Environmental,Temperature Range Max,65,degC,Real,Datasheet,Measurement range.
+BMP280,Sensor - Environmental,Temperature Resolution,0.01,degC,Real,Datasheet,
+BMP280,Sensor - Environmental,Supply Current,0.01,mA,Real,Estimated,Not stated separately by DFRobot; typically single-digit microamps at 1 Hz for this Bosch part. Negligible vs the BNO055.
+BMP280,Sensor - Environmental,I2C Address,0x76,n/a,String,Datasheet,
+BMP280,Sensor - Environmental,Pressure Output Unit,Pa,n/a,String,Datasheet,"The DFRobot library returns pascals, NOT hectopascals."
+BMP280,Sensor - Environmental,Altitude Output Type,Calculated,n/a,String,Datasheet,"DFRobot states explicitly that altitude is calculated from temperature and pressure, not measured, and carries error."
+RPLidar A1,Sensor - Ranging,Manufacturer Part Number,A1M8,n/a,String,Datasheet,Slamtec RPLIDAR A1.
+RPLidar A1,Sensor - Ranging,Measurement Principle,Laser triangulation,n/a,String,Datasheet,
+RPLidar A1,Sensor - Ranging,Distance Range Min,0.15,m,Real,Datasheet,
+RPLidar A1,Sensor - Ranging,Distance Range Max,12,m,Real,Conflict,12 m applies to A1M8-R6 and later. A1M8-R4 and earlier are 6 m. CONFIRM THE HARDWARE REVISION.
+RPLidar A1,Sensor - Ranging,Angular Range,360,deg,Real,Datasheet,Full omnidirectional scan.
+RPLidar A1,Sensor - Ranging,Distance Resolution Below 1.5 m,0.5,mm,Real,Datasheet,<0.5 mm.
+RPLidar A1,Sensor - Ranging,Distance Resolution All Ranges,1,%,Real,Datasheet,<1% of the measured distance. Triangulation resolution degrades with range.
+RPLidar A1,Sensor - Ranging,Angular Resolution,1,deg,Real,Datasheet,<=1 deg at the 5.5 Hz scan rate.
+RPLidar A1,Sensor - Ranging,Sample Duration,0.5,ms,Real,Datasheet,
+RPLidar A1,Sensor - Ranging,Sample Rate,8000,Hz,Real,Conflict,8000 Hz for A1M8-R6. The rev 1.0 datasheet states >=2000 Hz. Revision-dependent.
+RPLidar A1,Sensor - Ranging,Scan Rate Min,1,Hz,Real,Datasheet,
+RPLidar A1,Sensor - Ranging,Scan Rate Typical,5.5,Hz,Real,Datasheet,When taking 360 samples per scan.
+RPLidar A1,Sensor - Ranging,Scan Rate Max,10,Hz,Real,Datasheet,Requires ~9 V to the motor separately.
+RPLidar A1,Sensor - Ranging,Scan Rate Observed,6.75,Hz,Real,Repo-design,5.5-8 Hz measured on the robot; midpoint used. Mock source publishes at 10 Hz.
+RPLidar A1,Sensor - Ranging,Laser Wavelength,785,nm,Real,Datasheet,"Infrared band, 775-795 nm."
+RPLidar A1,Sensor - Ranging,Laser Power Typical,3,mW,Real,Datasheet,Peak power; 5 mW maximum.
+RPLidar A1,Sensor - Ranging,Laser Safety Class,Class 1,n/a,String,Datasheet,Safe for humans and pets - relevant given the robot's subject.
+RPLidar A1,Sensor - Ranging,Scanner Supply Voltage,5,V,Real,Datasheet,4.9-5.5 V. Exceeding the max may damage the core.
+RPLidar A1,Sensor - Ranging,Scanner Voltage Ripple Max,50,mV,Real,Datasheet,High ripple may cause core failure.
+RPLidar A1,Sensor - Ranging,Scanner Start Current,500,mA,Real,Datasheet,Typical; 600 mA max. Underpower causes startup failure.
+RPLidar A1,Sensor - Ranging,Scanner Current Working,300,mA,Real,Datasheet,Typical at 5 V; 350 mA max.
+RPLidar A1,Sensor - Ranging,Scanner Current Sleep,80,mA,Real,Datasheet,Typical at 5 V.
+RPLidar A1,Sensor - Ranging,Motor Supply Voltage Min,5,V,Real,Datasheet,
+RPLidar A1,Sensor - Ranging,Motor Supply Voltage Max,10,V,Real,Datasheet,Adjust according to desired speed.
+RPLidar A1,Sensor - Ranging,Motor Current,100,mA,Real,Datasheet,Typical at 5 V.
+RPLidar A1,Sensor - Ranging,Total Power Working,2.0,W,Real,Calculated,(300 mA scanner + 100 mA motor) x 5 V.
+RPLidar A1,Sensor - Ranging,Mass,190,g,Real,Datasheet,Heaviest single sensor in the suite.
+RPLidar A1,Sensor - Ranging,Operating Temperature Min,0,degC,Real,Datasheet,
+RPLidar A1,Sensor - Ranging,Operating Temperature Max,45,degC,Real,Datasheet,Narrower than the Pi Camera 3 at the top end.
+RPLidar A1,Sensor - Ranging,Host Interface,USB-UART,n/a,String,Datasheet,Via a Silicon Labs CP2102 bridge on the development kit.
+RPLidar A1,Sensor - Ranging,Serial Baud Rate,115200,baud,Integer,Repo-config,"lidar.yaml, rplidar_node.serial_baudrate. 8N1."
+RPLidar A1,Sensor - Ranging,Scan Mode,Standard,n/a,String,Repo-config,"lidar.yaml, rplidar_node.scan_mode."
+RPLidar A1,Sensor - Ranging,Distance Output Unit,mm,n/a,String,Datasheet,"Each sample carries distance (mm), heading (deg), quality and a start flag."
+RPLidar A1,Sensor - Ranging,Heading Output Unit,deg,n/a,String,Datasheet,
+Jetson Orin Nano Developer Kit,Compute,Module,Jetson Orin Nano 8GB,n/a,String,Datasheet,
+Jetson Orin Nano Developer Kit,Compute,AI Performance,40,TOPS,Real,Datasheet,67 TOPS in Super mode after the software update.
+Jetson Orin Nano Developer Kit,Compute,CPU,6-core Arm Cortex-A78AE v8.2,n/a,String,Datasheet,"1.5 MB L2 + 4 MB L3, up to 1.5 GHz."
+Jetson Orin Nano Developer Kit,Compute,GPU CUDA Cores,1024,count,Integer,Datasheet,"NVIDIA Ampere architecture, plus 32 tensor cores."
+Jetson Orin Nano Developer Kit,Compute,Memory,8,GB,Real,Datasheet,128-bit LPDDR5 at 68 GB/s.
+Jetson Orin Nano Developer Kit,Compute,Length,100,mm,Real,Datasheet,
+Jetson Orin Nano Developer Kit,Compute,Width,79,mm,Real,Datasheet,
+Jetson Orin Nano Developer Kit,Compute,Height,21,mm,Real,Datasheet,"Includes feet, carrier board, module and thermal solution."
+Jetson Orin Nano Developer Kit,Compute,Mass,Not published,n/a,String,Unpublished,NVIDIA does not publish devkit mass. WEIGH IT - it is a significant contributor to the robot's mass budget.
+Jetson Orin Nano Developer Kit,Compute,Power Mode Min,7,W,Real,Datasheet,Configurable power mode.
+Jetson Orin Nano Developer Kit,Compute,Power Mode Max,15,W,Real,Datasheet,Configurable power mode. Super mode raises this to 25 W.
+Jetson Orin Nano Developer Kit,Compute,DC Input Voltage Min,9,V,Real,Repo-design,BillieBot feeds the barrel jack directly from the 3S pack. Verify against the carrier board spec - NVIDIA ships a 19 V adapter.
+Jetson Orin Nano Developer Kit,Compute,DC Input Voltage Max,19,V,Real,Repo-design,See DC Input Voltage Min note.
+Jetson Orin Nano Developer Kit,Compute,Bulk Capacitance at Feed,1000,uF,Real,Repo-design,Minimum bulk capacitor specified at the Jetson power feed.
+Jetson Orin Nano Developer Kit,Compute,USB 3.2 Gen2 Port Count,4,count,Integer,Datasheet,Type-A. Plus one Type-C for UFP.
+Jetson Orin Nano Developer Kit,Compute,CSI Camera Connector Count,2,count,Integer,Datasheet,22-pin MIPI CSI-2. A 15-to-22-pin cable is needed for Pi-style cameras.
+Jetson Orin Nano Developer Kit,Compute,Allocated Role,Primary compute,n/a,String,Repo-design,"Nav2, OAK-D detection, EKF, SLAM/AMCL, mission controller."
+Raspberry Pi 5,Compute,SoC,Broadcom BCM2712,n/a,String,Datasheet,Quad-core Arm Cortex-A76 at 2.4 GHz.
+Raspberry Pi 5,Compute,Length,85,mm,Real,Datasheet,Standard Raspberry Pi form factor.
+Raspberry Pi 5,Compute,Width,56,mm,Real,Datasheet,
+Raspberry Pi 5,Compute,Height,18,mm,Real,Estimated,Board plus tallest connectors; excludes any active cooler.
+Raspberry Pi 5,Compute,Mass,46,g,Real,Estimated,Widely cited retailer figure; Raspberry Pi does not publish it prominently. Excludes cooler and cables.
+Raspberry Pi 5,Compute,Supply Voltage,5,V,Real,Datasheet,USB-C Power Delivery. Official supply is 5.1 V.
+Raspberry Pi 5,Compute,Recommended Supply Current,5,A,Real,Datasheet,5 V / 5 A (27 W). With a 3 A supply the Pi limits total USB current to 600 mA instead of 1.6 A.
+Raspberry Pi 5,Compute,Bare-Board Active Current Typical,0.8,A,Real,Datasheet,"Raspberry Pi documented figure, excluding USB peripherals."
+Raspberry Pi 5,Compute,Power Idle,3.0,W,Real,Estimated,"Headless, WLAN only. Community bench measurement."
+Raspberry Pi 5,Compute,Power Full Load,11.6,W,Real,Estimated,"Sustained stress test, 8 GB model. Community bench measurement."
+Raspberry Pi 5,Compute,USB Peripheral Current Budget,1.6,A,Real,Datasheet,"Total across USB ports, when a 5 A PD supply is detected."
+Raspberry Pi 5,Compute,Power Regulator,GeeekPi PD 5 V / 5 A,n/a,String,Repo-design,Fed from the fCmp 10 A branch of the distribution bus.
+Raspberry Pi 5,Compute,Allocated Role,Secondary compute,n/a,String,Repo-design,"Thermal, NoIR, audio, cognition."
+Arduino Nano V3,Compute,Microcontroller,ATmega328P,n/a,String,Datasheet,AVR architecture.
+Arduino Nano V3,Compute,Clock Speed,16,MHz,Real,Datasheet,
+Arduino Nano V3,Compute,Flash Memory,32,kB,Real,Datasheet,2 kB used by the bootloader.
+Arduino Nano V3,Compute,SRAM,2,kB,Real,Datasheet,
+Arduino Nano V3,Compute,EEPROM,1,kB,Real,Datasheet,
+Arduino Nano V3,Compute,Operating Voltage,5,V,Real,Datasheet,Logic level.
+Arduino Nano V3,Compute,Input Voltage Recommended Min,7,V,Real,Datasheet,Via VIN.
+Arduino Nano V3,Compute,Input Voltage Recommended Max,12,V,Real,Datasheet,Via VIN. Absolute limits 6-20 V.
+Arduino Nano V3,Compute,Current Consumption,19,mA,Real,Datasheet,Board typical.
+Arduino Nano V3,Compute,Power,95,mW,Real,Calculated,19 mA x 5 V.
+Arduino Nano V3,Compute,DC Current per IO Pin,40,mA,Real,Datasheet,Maximum.
+Arduino Nano V3,Compute,Length,45,mm,Real,Datasheet,
+Arduino Nano V3,Compute,Width,18,mm,Real,Datasheet,
+Arduino Nano V3,Compute,Mass,7,g,Real,Datasheet,
+Arduino Nano V3,Compute,ADC Resolution,10,bit,Integer,Datasheet,0-1023 counts over 0-5 V. Used for the battery divider tap.
+Arduino Nano V3,Compute,Serial Baud Rate,57600,baud,Integer,Repo-config,base_driver.yaml. Design doc said 115200 but firmware uses 57600.
+Arduino Nano V3,Compute,PID Loop Rate,30,Hz,Real,Repo-config,"base_driver.yaml, pid_rate_hz."
+Arduino Nano V3,Compute,Command Timeout,0.5,s,Real,Repo-config,"base_driver.yaml, cmd_timeout_sec. Watchdog was tightened from 2000 ms to 500 ms."
+Arduino Nano V3,Compute,Allocated Role,Motor controller,n/a,String,Repo-design,"Encoder counting, PID velocity loop, PWM generation, battery ADC, heartbeat watchdog."
+JGA25-371 Gearmotor,Actuator - Drive,Quantity,2,count,Integer,Repo-design,Left and right of the differential drive.
+JGA25-371 Gearmotor,Actuator - Drive,Rated Voltage,12,V,Real,Datasheet,
+JGA25-371 Gearmotor,Actuator - Drive,Operating Voltage Min,6,V,Real,Datasheet,
+JGA25-371 Gearmotor,Actuator - Drive,Operating Voltage Max,12,V,Real,Datasheet,
+JGA25-371 Gearmotor,Actuator - Drive,No-Load Speed,126,rpm,Real,Datasheet,"At 12 V, 34:1 variant. BillieBot design docs quote 130 rpm."
+JGA25-371 Gearmotor,Actuator - Drive,Gear Ratio,34,dimensionless,Real,Datasheet,"34:1 reduction, metal gears."
+JGA25-371 Gearmotor,Actuator - Drive,Rated Torque,4.2,kgf.cm,Real,Datasheet,Approximately 0.41 N.m.
+JGA25-371 Gearmotor,Actuator - Drive,Stall Current,1.0,A,Real,Conflict,Vendor datasheet states 1000 mA. BillieBot design docs estimate 1.2-2 A each. MEASURE before sizing the motor fuse.
+JGA25-371 Gearmotor,Actuator - Drive,Mass,86,g,Real,Datasheet,Some vendors quote 100 g gross.
+JGA25-371 Gearmotor,Actuator - Drive,Encoder Type,Quadrature Hall,n/a,String,Datasheet,Integrated on the motor shaft.
+JGA25-371 Gearmotor,Actuator - Drive,Encoder Resolution at Motor Shaft,12,count/rev,Integer,Datasheet,Counts per revolution before the gearbox.
+JGA25-371 Gearmotor,Actuator - Drive,Encoder Ticks per Output Revolution,2000,count/rev,Real,Repo-config,"base_driver.yaml. A CALIBRATION value, not a datasheet value - reference alternatives were 1974.7 and 1779.0. Calibrate by driving 1 m straight."
+JGA25-371 Gearmotor,Actuator - Drive,Motor Branch Peak Power,40,W,Real,Repo-design,"Stall estimate for both motors, used to size the 10 A motor fuse."
+Drive Wheel,Actuator - Drive,Quantity,2,count,Integer,Repo-design,
+Drive Wheel,Actuator - Drive,Diameter,68,mm,Real,Repo-design,Rubber tyre.
+Drive Wheel,Actuator - Drive,Radius Configured,0.034,m,Real,Repo-config,"base_driver.yaml, wheel_radius. MEASURE THE TYRE UNDER LOAD - this directly scales odometry."
+Drive Wheel,Actuator - Drive,Wheel Separation,0.298,m,Real,Repo-config,base_driver.yaml. Measure centre-to-centre of the tyre contact patches.
+Drive Wheel,Actuator - Drive,Max Linear Speed,0.46,m/s,Real,Calculated,At 130 rpm with a 68 mm wheel.
+L298N H-Bridge,Actuator - Drive,Logic Supply Voltage,5,V,Real,Datasheet,
+L298N H-Bridge,Actuator - Drive,Motor Supply Voltage Min,5,V,Real,Datasheet,Module level. The bare IC supports up to 46 V.
+L298N H-Bridge,Actuator - Drive,Motor Supply Voltage Max,35,V,Real,Datasheet,Module level. Remove the on-board 5 V regulator jumper above 12 V.
+L298N H-Bridge,Actuator - Drive,Continuous Current per Channel,2,A,Real,Datasheet,
+L298N H-Bridge,Actuator - Drive,Peak Current per Channel,3,A,Real,Datasheet,2.5-3 A depending on vendor. No built-in current limiting.
+L298N H-Bridge,Actuator - Drive,Forward Voltage Drop,2,V,Real,Datasheet,Approximately 1.8-2 V. At a 12 V supply the motors see roughly 10 V.
+L298N H-Bridge,Actuator - Drive,Max Power Dissipation,25,W,Real,Datasheet,"Total, with the heatsink fitted."
+L298N H-Bridge,Actuator - Drive,Logic Current,36,mA,Real,Datasheet,"Maximum, 0-36 mA range."
+L298N H-Bridge,Actuator - Drive,Channel Count,2,count,Integer,Datasheet,Dual full-bridge.
+L298N H-Bridge,Actuator - Drive,Control Interface,PWM + DIR,n/a,String,Repo-design,PWM 0-255 on ENA/ENB plus direction on IN1-IN4.
+L298N H-Bridge,Actuator - Drive,Design Note,Bring-up driver only,n/a,String,Repo-design,Inefficient and heat-prone. Upgrade to a MOSFET driver with current limiting before extended operation.
+MAX98357A Amplifier,Audio Output,Output Power,3.2,W,Real,Datasheet,Into 4 ohm at 5 V supply.
+MAX98357A Amplifier,Audio Output,Supply Voltage Min,2.5,V,Real,Datasheet,
+MAX98357A Amplifier,Audio Output,Supply Voltage Max,5.5,V,Real,Datasheet,
+MAX98357A Amplifier,Audio Output,Digital Interface,I2S,n/a,String,Datasheet,Driven from the Raspberry Pi 5 GPIO.
+Speaker,Audio Output,Rated Power,3,W,Real,Repo-design,Driven by the MAX98357A. Status chimes only in the MVP.
+Speaker,Audio Output,Max Volume Setting,0.5,dimensionless,Real,Repo-config,"audio.yaml, speaker_node.max_volume."
+Speaker,Audio Output,Min Playback Interval,10,s,Real,Repo-config,"audio.yaml, speaker_node.min_interval_sec."
+Battery Pack,Power,Chemistry,LiPo,n/a,String,Repo-design,Venom brand.
+Battery Pack,Power,Cell Count,3,count,Integer,Repo-config,"base_driver.yaml, battery_cell_count. 3S configuration."
+Battery Pack,Power,Nominal Voltage,11.1,V,Real,Repo-design,3 cells at 3.7 V nominal.
+Battery Pack,Power,Capacity,4,Ah,Real,Repo-design,
+Battery Pack,Power,Energy,44.4,Wh,Real,Calculated,11.1 V x 4 Ah.
+Battery Pack,Power,Discharge Rating,20,C,Real,Repo-design,80 A continuous capability - install the main fuse close to the positive terminal.
+Battery Pack,Power,Low Voltage Threshold,10.5,V,Real,Repo-config,base_driver.yaml. 3.5 V/cell. Triggers the LOW health enum.
+Battery Pack,Power,Critical Voltage Threshold,9.9,V,Real,Repo-config,base_driver.yaml. 3.3 V/cell. Triggers SAFE mode.
+Battery Pack,Power,Mass,300,g,Real,Estimated,Typical for a 3S 4 Ah 20C pack. WEIGH THE ACTUAL PACK - it is likely the single heaviest component.
+Battery Voltage Sense,Power,Divider Ratio,6.0,dimensionless,Real,Repo-config,base_driver.yaml. V = adc x 5.0 / 1023 x ratio. Verify actual resistor values R1/(R1+R2).
+Battery Voltage Sense,Power,ADC Pin,0,count,Integer,Repo-config,"base_driver.yaml, battery_pin - Arduino A0."
+Battery Voltage Sense,Power,Sample Rate,1,Hz,Real,Repo-config,"base_driver.yaml, battery_read_interval_sec."
+Power Distribution,Power,Main Fuse Rating,20,A,Real,Repo-design,"Series with the master switch, feeding the distribution bus."
+Power Distribution,Power,Motor Branch Fuse Rating,10,A,Real,Repo-design,Feeds the L298N VMOT. Electrically separated from the compute rails.
+Power Distribution,Power,Compute Branch Fuse Rating,10,A,Real,Repo-design,Feeds the Jetson barrel jack and the Pi 5 regulator.
+Power Distribution,Power,Accessory Branch Fuse Rating,5,A,Real,Repo-design,"Feeds the 5 V buck for the Arduino, amplifier, IR LED and fan."
+Power Distribution,Power,Accessory Regulator,GS2678 buck 5 V,n/a,String,Repo-design,Accessory rail.
+Power Distribution,Power,Reserved Actuator Regulator,Pololu D24V90F5 5 V / 9 A,n/a,String,Repo-design,Reserved and fused for a future treat dispenser.
+Power Distribution,Power,Topology,Star,n/a,String,Repo-design,"Common ground at the distribution bus only, so motor current does not flow through signal references."
