@@ -11,6 +11,18 @@ audio_classifier:
     input_channels: 2
     classification_channel: 1
     energy_threshold_db: -40.0
+    # Resolve the array by name rather than by ALSA card index, which can change between
+    # boots (UT-AUD-01). Matches what audio_classifier_bench.launch.py already passes.
+    device_name_substring: "XVF3800"
+    doa_usb_product_substring: "XVF3800"
+    # Conservative production power policy for the XVF3800: BillieBot uses the mic array,
+    # beamforming and DoA, but not its WS2812 LED ring or its onboard audio amplifier
+    # (speaker output is the separate MAX98357A/I2S path). Enforced read-before-write and
+    # VOLATILE -- nothing is written to device flash. X0D30 (mic mute) is observed and
+    # reported, never written. See billiebot_audio/xvf3800_control.py.
+    xvf3800_power_policy_enabled: true
+    xvf3800_power_policy_strict: true
+    xvf3800_power_verify_period_sec: 30.0
 
 speaker_node:
   ros__parameters:

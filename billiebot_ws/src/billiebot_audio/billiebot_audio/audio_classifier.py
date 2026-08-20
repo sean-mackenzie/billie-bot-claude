@@ -5,6 +5,11 @@ Real mode: streams from ReSpeaker XVF3800 USB mic array, runs YAMNet TFLite,
            queries a DoA-capable USB device for direction of arrival.
 Mock mode: publishes periodic synthetic bark events for testing.
 
+Real mode also enforces BillieBot's conservative XVF3800 power policy before opening the
+input stream -- WS2812 LED-ring power off, onboard amplifier disabled, internal DoA LED mode
+preserved -- via xvf3800_control.py, which owns all USB vendor-control access. See that
+module's docstring for the exact invariant and why it is volatile.
+
 continuous_capture (default True): the original implementation blocked a 0.5 s ROS timer
 on a 0.975 s sd.rec() call every tick, which cannot sustain a genuine 2 Hz processing
 cadence. This refactor opens one continuous sounddevice.InputStream feeding an
@@ -17,15 +22,16 @@ import os
 import random
 import sys
 import time
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from rclpy.node import Node
 
+from billiebot_audio import xvf3800_control
 from billiebot_audio.audio_ring_buffer import AudioRingBuffer
 from billiebot_interfaces.msg import AudioEvent
+
 
 # YAMNet class indices for dog-related sounds
 YAMNET_DOG_CLASSES = {
@@ -38,34 +44,14 @@ YAMNET_DOG_CLASSES = {
     'Growling': AudioEvent.BARK,
 }
 
-# Appendix B-14 (BRINGUP_LADDER_ANALYSIS.md): this VID:PID is the older ReSpeaker
-# 4-Mic/XVF3000-era array, kept only as a compatibility fallback -- see resolve_doa_device().
-LEGACY_RESPEAKER_VID = 0x2886
-LEGACY_RESPEAKER_PID = 0x0018
 
-
-@dataclass
-class UsbDeviceInfo:
-    vendor_id: int
-    product_id: int
-    product_name: str = ''
-
-
-def resolve_doa_device(candidates: List[UsbDeviceInfo],
-                        product_substring: str) -> Optional[UsbDeviceInfo]:
-    """Pure resolver: prefers a device whose product name matches product_substring
-    (case-insensitive) -- e.g. 'XVF3800' -- and only falls back to the legacy
-    0x2886:0x0018 VID:PID if no name match is found, so hardware that happened to
-    enumerate under the old ID never regresses (Appendix B-14)."""
-    needle = product_substring.lower() if product_substring else ''
-    if needle:
-        for c in candidates:
-            if needle in c.product_name.lower():
-                return c
-    for c in candidates:
-        if c.vendor_id == LEGACY_RESPEAKER_VID and c.product_id == LEGACY_RESPEAKER_PID:
-            return c
-    return None
+def _bool_str(value: Optional[bool]) -> str:
+    """Lowercase 'true'/'false' for the XVF3800 diagnostic KeyValues, 'unknown' when the
+    device state could not be read. Pre-existing KeyValues keep their str(bool) form so the
+    schema DT-AUD-01 already scores against does not shift underneath it."""
+    if value is None:
+        return 'unknown'
+    return 'true' if value else 'false'
 
 
 class AudioClassifier(Node):
@@ -89,6 +75,12 @@ class AudioClassifier(Node):
         self.declare_parameter('publish_status', True)
         self.declare_parameter('device_name_substring', '')  # '' preserves device_index
         self.declare_parameter('doa_usb_product_substring', 'XVF3800')
+        # XVF3800 power policy: LED ring unpowered, onboard amplifier disabled, LED_EFFECT
+        # left at 4 (DoA). Volatile only -- nothing is written to device flash. strict=true
+        # makes an unverifiable policy a startup failure rather than a silent power leak.
+        self.declare_parameter('xvf3800_power_policy_enabled', True)
+        self.declare_parameter('xvf3800_power_policy_strict', True)
+        self.declare_parameter('xvf3800_power_verify_period_sec', 30.0)
 
         self.mock = bool(self.get_parameter('mock').value)
         self.publish_rate = float(self.get_parameter('publish_rate_hz').value)
@@ -121,11 +113,25 @@ class AudioClassifier(Node):
         self.doa_usb_product_substring = str(
             self.get_parameter('doa_usb_product_substring').value
         )
+        self.xvf3800_power_policy_enabled = bool(
+            self.get_parameter('xvf3800_power_policy_enabled').value
+        )
+        self.xvf3800_power_policy_strict = bool(
+            self.get_parameter('xvf3800_power_policy_strict').value
+        )
+        self.xvf3800_power_verify_period_sec = float(
+            self.get_parameter('xvf3800_power_verify_period_sec').value
+        )
 
         self.event_pub = self.create_publisher(AudioEvent, '/audio/events', 10)
         self.status_pub = None
         self._ring_buffer = None
         self._stream = None
+        # XVF3800 state. Mock mode leaves all of it untouched -- no USB is ever enumerated.
+        self._xvf_device = None
+        self._xvf_policy = None
+        self._xvf_last_error = ''
+        self._xvf_verify_timer = None
 
         if self.mock:
             self.get_logger().info('Audio classifier running in MOCK mode')
@@ -174,12 +180,20 @@ class AudioClassifier(Node):
 
             self._class_names = self._load_class_names(class_map_path)
 
+            # Before any audio interface is opened: assert the conservative power policy so
+            # the LED ring and onboard amplifier are provably off rather than assumed off.
+            self._apply_xvf_power_policy(initial=True)
+
             if self.continuous_capture:
                 self._start_continuous_capture()
 
             self.timer = self.create_timer(
                 1.0 / self.publish_rate, self.real_classify
             )
+            if self.xvf3800_power_policy_enabled and self.xvf3800_power_verify_period_sec > 0:
+                self._xvf_verify_timer = self.create_timer(
+                    self.xvf3800_power_verify_period_sec, self._verify_xvf_power_policy
+                )
             if self.publish_status:
                 self.status_pub = self.create_publisher(
                     DiagnosticArray, '/bench/audio_classifier/status', 10
@@ -202,6 +216,82 @@ class AudioClassifier(Node):
             for row in reader:
                 names.append(row[2])
         return names
+
+    # --- XVF3800 power policy and USB control -------------------------------------------
+
+    def _ensure_xvf_device(self):
+        """Return a live Xvf3800Device, opening one on demand.
+
+        The handle is cached but never permanently: any control failure calls
+        _invalidate_xvf_device(), so the next call re-enumerates the bus and recovers after
+        a USB re-enumeration (unplug/replug, or a hub reset). This is strictly better than
+        the previous behavior, which rescanned every device on the bus on every published
+        event and still could not survive a handle going stale mid-read.
+        """
+        if self._xvf_device is None:
+            self._xvf_device = xvf3800_control.open_xvf3800(self.doa_usb_product_substring)
+        return self._xvf_device
+
+    def _invalidate_xvf_device(self):
+        if self._xvf_device is not None:
+            self._xvf_device.close()
+            self._xvf_device = None
+
+    def _apply_xvf_power_policy(self, initial: bool = False):
+        """Apply and verify the XVF3800 power policy (read-before-write, zero writes when
+        the device is already compliant, nothing persisted to flash).
+
+        Strict mode makes an unverifiable policy a hard startup failure -- consistent with
+        this node's fail-loud handling of a missing YAMNet model -- because continuing would
+        silently leave the LED ring and amplifier drawing power. After startup, a failure is
+        only recorded and retried at the next verification tick: a transient USB error must
+        not take down a working classifier.
+        """
+        if not self.xvf3800_power_policy_enabled:
+            return
+
+        try:
+            device = self._ensure_xvf_device()
+            result = xvf3800_control.ensure_billiebot_power_policy(device)
+        except Exception as e:
+            self._invalidate_xvf_device()
+            result = xvf3800_control.PowerPolicyResult(
+                ok=False, error=f'{type(e).__name__}: {e}'
+            )
+
+        self._xvf_policy = result
+        self._xvf_last_error = '' if result.ok else result.error
+
+        if result.ok:
+            if initial or result.writes_performed:
+                self.get_logger().info(xvf3800_control.describe_policy_result(result))
+            if result.mic_muted:
+                self.get_logger().warning(
+                    'XVF3800 X0D30 is high: microphones are MUTED and the red mute LED is '
+                    'on. This node does not write X0D30 -- clear it at the device if '
+                    'capture is silent.'
+                )
+            return
+
+        # Not ok: the handle may be stale, so drop it and let the next attempt re-resolve.
+        self._invalidate_xvf_device()
+        self.get_logger().error(xvf3800_control.describe_policy_result(result))
+        if initial and self.xvf3800_power_policy_strict:
+            self.get_logger().error(
+                'xvf3800_power_policy_strict is true — refusing to start with an '
+                'unverified XVF3800 power configuration'
+            )
+            sys.exit(1)
+        if initial:
+            self.get_logger().warning(
+                'xvf3800_power_policy_strict is false — continuing with an unverified '
+                'XVF3800 power configuration'
+            )
+
+    def _verify_xvf_power_policy(self):
+        """Low-rate re-verification. Normally a pure read that performs no writes; only a
+        device that has reverted (re-enumeration, firmware reset) triggers a repair."""
+        self._apply_xvf_power_policy(initial=False)
 
     def _resolve_input_device(self):
         device_idx = int(self.get_parameter('device_index').value)
@@ -378,8 +468,18 @@ class AudioClassifier(Node):
         arr.header.stamp = self.get_clock().now().to_msg()
         status = DiagnosticStatus()
         status.name = 'audio_classifier_status'
-        status.level = DiagnosticStatus.OK
-        status.message = 'OK'
+        policy = self._xvf_policy
+        policy_ok = bool(policy is not None and policy.ok)
+        # 'disabled' rather than 'false' when enforcement was never attempted: false would
+        # read as "verification failed" when in fact it was intentionally switched off.
+        policy_ok_value = ('disabled' if not self.xvf3800_power_policy_enabled
+                           else _bool_str(policy_ok))
+        if self.xvf3800_power_policy_enabled and not policy_ok:
+            status.level = DiagnosticStatus.WARN
+            status.message = 'XVF3800 power policy not verified'
+        else:
+            status.level = DiagnosticStatus.OK
+            status.message = 'OK'
         overrun_count = self._ring_buffer.overrun_count if self._ring_buffer is not None else 0
         status.values = [
             KeyValue(key='cycle_timestamp_monotonic_s', value=str(cycle_start)),
@@ -389,61 +489,80 @@ class AudioClassifier(Node):
             KeyValue(key='top_label', value=result['top_name']),
             KeyValue(key='top_score', value=str(result['top_score'])),
             KeyValue(key='buffer_overrun_count', value=str(overrun_count)),
+            # XVF3800 power policy. Lowercase true/false, 'disabled' when enforcement was
+            # intentionally turned off, and 'unknown' rather than a misleading false when
+            # the device state could not be read at all.
+            KeyValue(key='xvf3800_power_policy_ok', value=policy_ok_value),
+            KeyValue(key='xvf3800_led_power_off',
+                     value=_bool_str(policy.led_power_off if policy else None)),
+            KeyValue(key='xvf3800_amplifier_disabled',
+                     value=_bool_str(policy.amplifier_disabled if policy else None)),
+            KeyValue(key='xvf3800_mic_muted',
+                     value=_bool_str(policy.mic_muted if policy else None)),
+            KeyValue(key='xvf3800_led_effect',
+                     value=str(policy.led_effect) if policy and policy.led_effect is not None
+                     else 'unknown'),
+            KeyValue(key='xvf3800_last_control_error', value=self._xvf_last_error),
         ]
         arr.status.append(status)
         self.status_pub.publish(arr)
 
-    def _get_doa(self) -> float:
-        """Query the XVF3800 for Direction of Arrival using its DOA_VALUE command."""
+    def _clear_stale_doa_error(self):
+        """A successful DoA read proves the control path recovered, so drop a stale DoA
+        error -- but never clear a live power-policy failure, which a good DoA read does not
+        fix. When the policy is healthy, disabled, or never run, _xvf_last_error can only
+        hold a stale DoA error, so clearing it is safe."""
+        if self._xvf_policy is not None and not self._xvf_policy.ok:
+            return
+        self._xvf_last_error = ''
+
+    def _read_doa_degrees(self) -> Optional[float]:
+        """Read DOA_VALUE via xvf3800_control, or None if the read failed.
+
+        Returning None rather than 0.0 is the point: 0 degrees is a legitimate physical
+        bearing, and DT-AUD-02 gates on `dt_aud_02_doa_not_fixed_at_zero`, so a failed read
+        must be distinguishable from the array genuinely pointing forward. A failure drops
+        the cached handle so the next read re-resolves the device.
+        """
+        # A missing handle means the previous device was lost. A reconnected XVF3800 comes
+        # back at firmware defaults -- LED ring powered, amplifier enabled -- so the policy
+        # must be restored before this device is trusted for anything. Waiting for the 30 s
+        # verification timer instead would leave the ring lit for up to a full period.
+        if self._xvf_device is None and self.xvf3800_power_policy_enabled:
+            self._apply_xvf_power_policy(initial=False)
+            if self._xvf_policy is None or not self._xvf_policy.ok:
+                # Error already recorded and logged; the next read and the periodic timer
+                # both retry. Never fatal post-startup.
+                return None
+
         try:
-            import usb.core
-            import usb.util
-
-            raw_devices = list(usb.core.find(find_all=True))
-            candidates = []
-
-            for dev in raw_devices:
-                product_name = ''
-                try:
-                    product_name = usb.util.get_string(dev, dev.iProduct) or ''
-                except Exception:
-                    pass
-                candidates.append(UsbDeviceInfo(dev.idVendor, dev.idProduct, product_name))
-
-            chosen = resolve_doa_device(candidates, self.doa_usb_product_substring)
-            
-            if chosen is None:
-                return 0.0
-            
-            dev = raw_devices[candidates.index(chosen)]
-
-            response = dev.ctrl_transfer(
-                usb.util.CTRL_IN 
-                | usb.util.CTRL_TYPE_VENDOR
-                | usb.util.CTRL_RECIPIENT_DEVICE,
-                0,
-                0x80 | 18,   # XVF3800 DOA_VALUE read command
-                20,          # GPO servicer resource ID
-                5,           # status + 2 uint16 values
-                100000,
-            )
-
-            raw = bytes(response)
-
-            if len(raw) >= 5 and raw[0] == 0:
-                doa_deg = int.from_bytes(
-                    raw[1:3], 
-                    byteorder='little'
-                )
-
-                if 0 <= doa_deg <= 359:
-                    return float(doa_deg)
-
-            return 0.0
-
+            reading = self._ensure_xvf_device().read_doa()
         except Exception as e:
-            self.get_logger().warning(f'DoA query failed: {e}')
+            self._invalidate_xvf_device()
+            self._xvf_last_error = f'DoA read failed: {type(e).__name__}: {e}'
+            return None
+
+        if not (xvf3800_control.DOA_MIN_DEG <= reading.degrees <= xvf3800_control.DOA_MAX_DEG):
+            self._xvf_last_error = (
+                f'DoA read out of range: {reading.degrees} deg'
+            )
+            return None
+
+        self._clear_stale_doa_error()
+        return float(reading.degrees)
+
+    def _get_doa(self) -> float:
+        """Direction of Arrival in degrees for AudioEvent.doa_deg.
+
+        Keeps the historical contract -- always a float, 0.0 on failure -- so AudioEvent is
+        unchanged; the failure itself is recorded in _xvf_last_error and surfaced in
+        /bench/audio_classifier/status rather than being invisible.
+        """
+        doa = self._read_doa_degrees()
+        if doa is None:
+            self.get_logger().warning(f'DoA query failed: {self._xvf_last_error}')
             return 0.0
+        return doa
 
     def mock_classify(self):
         """Publish synthetic audio events for testing."""
@@ -467,6 +586,12 @@ class AudioClassifier(Node):
             msg.yamnet_label = 'Whimper'
             msg.energy_db = -20.0 + random.uniform(-5, 5)
             self.event_pub.publish(msg)
+
+    def destroy_node(self):
+        """Release the XVF3800 control handle so a restarted node can re-open it. The USB
+        audio interfaces are untouched here -- they belong to sounddevice/ALSA, not to us."""
+        self._invalidate_xvf_device()
+        return super().destroy_node()
 
 
 def main(args=None):
