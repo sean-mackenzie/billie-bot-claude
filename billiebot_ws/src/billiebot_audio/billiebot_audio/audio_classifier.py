@@ -470,6 +470,10 @@ class AudioClassifier(Node):
         status.name = 'audio_classifier_status'
         policy = self._xvf_policy
         policy_ok = bool(policy is not None and policy.ok)
+        # 'disabled' rather than 'false' when enforcement was never attempted: false would
+        # read as "verification failed" when in fact it was intentionally switched off.
+        policy_ok_value = ('disabled' if not self.xvf3800_power_policy_enabled
+                           else _bool_str(policy_ok))
         if self.xvf3800_power_policy_enabled and not policy_ok:
             status.level = DiagnosticStatus.WARN
             status.message = 'XVF3800 power policy not verified'
@@ -485,9 +489,10 @@ class AudioClassifier(Node):
             KeyValue(key='top_label', value=result['top_name']),
             KeyValue(key='top_score', value=str(result['top_score'])),
             KeyValue(key='buffer_overrun_count', value=str(overrun_count)),
-            # XVF3800 power policy. Lowercase true/false throughout, and 'unknown' rather
-            # than a misleading false when the device could not be read at all.
-            KeyValue(key='xvf3800_power_policy_ok', value=_bool_str(policy_ok)),
+            # XVF3800 power policy. Lowercase true/false, 'disabled' when enforcement was
+            # intentionally turned off, and 'unknown' rather than a misleading false when
+            # the device state could not be read at all.
+            KeyValue(key='xvf3800_power_policy_ok', value=policy_ok_value),
             KeyValue(key='xvf3800_led_power_off',
                      value=_bool_str(policy.led_power_off if policy else None)),
             KeyValue(key='xvf3800_amplifier_disabled',
@@ -502,6 +507,15 @@ class AudioClassifier(Node):
         arr.status.append(status)
         self.status_pub.publish(arr)
 
+    def _clear_stale_doa_error(self):
+        """A successful DoA read proves the control path recovered, so drop a stale DoA
+        error -- but never clear a live power-policy failure, which a good DoA read does not
+        fix. When the policy is healthy, disabled, or never run, _xvf_last_error can only
+        hold a stale DoA error, so clearing it is safe."""
+        if self._xvf_policy is not None and not self._xvf_policy.ok:
+            return
+        self._xvf_last_error = ''
+
     def _read_doa_degrees(self) -> Optional[float]:
         """Read DOA_VALUE via xvf3800_control, or None if the read failed.
 
@@ -510,6 +524,17 @@ class AudioClassifier(Node):
         must be distinguishable from the array genuinely pointing forward. A failure drops
         the cached handle so the next read re-resolves the device.
         """
+        # A missing handle means the previous device was lost. A reconnected XVF3800 comes
+        # back at firmware defaults -- LED ring powered, amplifier enabled -- so the policy
+        # must be restored before this device is trusted for anything. Waiting for the 30 s
+        # verification timer instead would leave the ring lit for up to a full period.
+        if self._xvf_device is None and self.xvf3800_power_policy_enabled:
+            self._apply_xvf_power_policy(initial=False)
+            if self._xvf_policy is None or not self._xvf_policy.ok:
+                # Error already recorded and logged; the next read and the periodic timer
+                # both retry. Never fatal post-startup.
+                return None
+
         try:
             reading = self._ensure_xvf_device().read_doa()
         except Exception as e:
@@ -522,6 +547,8 @@ class AudioClassifier(Node):
                 f'DoA read out of range: {reading.degrees} deg'
             )
             return None
+
+        self._clear_stale_doa_error()
         return float(reading.degrees)
 
     def _get_doa(self) -> float:
