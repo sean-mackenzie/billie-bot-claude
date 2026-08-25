@@ -1,3 +1,92 @@
+# BillieBot Motor Nano Firmware - RevB
+
+## INTENDED RevB Firmware Modifications: 
+
+### NOTE
+
+The below notes are temporary and are simply a reference to an earlier discussion with Claude. The "new pin assignment", described below, is correct but the firmware has not yet been rewritten to reflect these changes. This README document should be rewritten once the RevB firmware modifications have been implemented. 
+
+### New pin assignment
+
+Your proposed D3/D5/D9/D10 works, but there's a strictly better ascending set:
+
+| Signal | Pin | Timer / freq |
+|---|---|---|
+| IN1 | D3 | Timer2, 490 Hz |
+| IN2 | D9 | Timer1, 490 Hz |
+| IN3 | D10 | Timer1, 490 Hz |
+| IN4 | D11 | Timer2, 490 Hz |
+| Right enc A / B | D6 / D7 | PORTD bits 6,7 |
+| Left enc A / B | A4 / A5 | PORTC bits 4,5 (unchanged) |
+
+**D3/D9/D10/D11 puts all four motor channels at the same 490 Hz.** Each motor gets one Timer1 channel and one Timer2 channel, so forward matches reverse *and* left matches right — which matters because `Kp/Kd/Ki/Ko` are shared globals across both wheels. It also leaves Timer0 completely alone, so `millis()` is untouched and you avoid the low-duty nonlinearity that Timer0 causes on D5/D6 (exactly where PID creep-speed behavior is most sensitive).
+
+Your D3/D5/D9/D10 would give motor A a 490 Hz forward and 980 Hz reverse while motor B ran 490/490 — asymmetric under one gain set.
+
+Free afterward: D2, D4, D5, D8, D12, D13, A0–A3, A6, A7.
+
+## The edits
+
+**`encoder_driver.h`**
+```c
+  #define LEFT_ENC_PIN_A PC4  //pin A4
+  #define LEFT_ENC_PIN_B PC5  //pin A5
+  #define RIGHT_ENC_PIN_A PD6 //pin 6
+  #define RIGHT_ENC_PIN_B PD7 //pin 7
+```
+
+**`encoder_driver.ino`** — the two ISRs swap which counter they feed, and the PORTD mask shifts from bits 2,3 to bits 6,7:
+```c
+ISR (PCINT1_vect){                        // LEFT, PORTC
+  static uint8_t enc_last=0;
+  enc_last <<= 2;
+  enc_last |= (PINC & (3 << 4)) >> 4;
+  left_enc_pos += ENC_STATES[(enc_last & 0x0f)];
+}
+
+ISR (PCINT2_vect){                        // RIGHT, PORTD
+  static uint8_t enc_last=0;
+  enc_last <<= 2;
+  enc_last |= (PIND & (3 << 6)) >> 6;
+  right_enc_pos += ENC_STATES[(enc_last & 0x0f)];
+}
+```
+
+**`ROSArduinoBridge.ino` setup()** — swap the port letters and mask registers; the `PCICR` line is unchanged:
+```c
+    DDRC &= ~(1<<LEFT_ENC_PIN_A);   DDRC &= ~(1<<LEFT_ENC_PIN_B);
+    DDRD &= ~(1<<RIGHT_ENC_PIN_A);  DDRD &= ~(1<<RIGHT_ENC_PIN_B);
+    PORTC |= (1<<LEFT_ENC_PIN_A);   PORTC |= (1<<LEFT_ENC_PIN_B);
+    PORTD |= (1<<RIGHT_ENC_PIN_A);  PORTD |= (1<<RIGHT_ENC_PIN_B);
+    PCMSK1 |= (1 << LEFT_ENC_PIN_A)|(1 << LEFT_ENC_PIN_B);
+    PCMSK2 |= (1 << RIGHT_ENC_PIN_A)|(1 << RIGHT_ENC_PIN_B);
+```
+
+**`motor_driver.h`**
+```c
+  #define RIGHT_MOTOR_FORWARD   3   // IN1
+  #define RIGHT_MOTOR_BACKWARD  9   // IN2
+  #define LEFT_MOTOR_FORWARD   10   // IN3
+  #define LEFT_MOTOR_BACKWARD  11   // IN4
+```
+
+That's the whole diff — no structural rewrite.
+
+## Practical Notes
+
+**Expect sign flips after rewiring.** Swapping left and right will likely invert something. `base_driver.yaml` already has `left_motor_sign`, `right_motor_sign`, `left_encoder_sign`, and `right_encoder_sign` — fix it there rather than recompiling. Put the robot on blocks and use `m 20 20` / `e` to verify each wheel drives forward and counts up.
+
+
+
+
+### NOTE
+
+The below is the original documentation for the Arduino Motor Controller.
+It was not written with respect to BillieBot. At some point, this documentation
+should be entirely rewritten to make it more clear, concise, and applicable to BillieBot. 
+
+
+
 # Arduino Motor Controller
 
 This code turns an Arduino into a motor controller!

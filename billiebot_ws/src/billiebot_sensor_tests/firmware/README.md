@@ -1,0 +1,1 @@
+The Sensor Nano firmware (sensor_nano.ino) and documentation has been moved to: billie-bot-claude/firmware/sensor_nano

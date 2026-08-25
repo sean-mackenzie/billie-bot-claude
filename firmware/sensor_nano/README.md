@@ -1,3 +1,11 @@
+## NOTE
+
+The Sensor Nano firmware was moved
+* from: billie-bot-claude/billiebot_ws/src/billiebot_sensor_tests/firmware 
+* to: (here) billie-bot-claude/firmware/sensor_nano. 
+
+The below documentation has not yet been revised to reflect this change. 
+
 # Sensor Nano firmware
 
 Production-candidate platform-sensor acquisition firmware for the BillieBot **Sensor Nano**
